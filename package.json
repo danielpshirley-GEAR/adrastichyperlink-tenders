@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && python3 scripts/assemble_pages.py",
+    "build": "next build && python3 scripts/assemble_pages.py && python3 scripts/export_review.py",
+    "export:review": "python3 scripts/export_review.py",
+    "screenshots": "python3 scripts/capture_screenshots.py",
     "deploy:review": "npm run build && npx wrangler pages deploy out --project-name adrastichyperlink-tenders --branch main",
     "start": "next start",
     "lint": "next lint"
