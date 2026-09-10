@@ -1,7 +1,7 @@
 {
   "environment": "public-review",
   "buildId": "rev-2026.09.10-v1",
-  "deployedAt": "2026-09-10T11:11:31.397966+00:00",
+  "deployedAt": "2026-09-10T11:41:56.704524+00:00",
   "routes": [
     "index.html",
     "today.html",
