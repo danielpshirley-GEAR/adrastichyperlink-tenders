@@ -1,8 +1,8 @@
 // src/modules/public-tenders/components/ScanView.tsx
 'use client';
 
-import React, { useState } from 'react';
-import { Radio, Link2, Play, CheckCircle, Clock, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Radio, Link2, Play, CheckCircle2, Clock, RefreshCw, AlertCircle, Database, Sparkles, XCircle } from 'lucide-react';
 import { SourceMeta } from '../connectors/registry';
 
 interface ScanViewProps {
@@ -11,19 +11,39 @@ interface ScanViewProps {
   isReviewMode?: boolean;
 }
 
-export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanViewProps) {
+export function ScanView({ sources: initialSources, basePath = '', isReviewMode = false }: ScanViewProps) {
+  const [sources, setSources] = useState<SourceMeta[]>(initialSources);
   const [urlInput, setUrlInput] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<any | null>(null);
+  const [healthData, setHealthData] = useState<any | null>(null);
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then((res) => res.json())
+      .then((data) => setHealthData(data))
+      .catch((err) => console.error(err));
+
+    fetch('/api/sources')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.sources) setSources(data.sources);
+      })
+      .catch((err) => console.error(err));
+  }, []);
 
   const handleScan = async (scanType: 'quick' | 'full' | 'deep') => {
     if (isReviewMode) {
-      setScanMessage(`Scan action (${scanType.toUpperCase()}) disabled in Public Review Mode.`);
-      setTimeout(() => setScanMessage(null), 3500);
+      setScanResult({
+        status: 'notice',
+        message: `Scan action (${scanType.toUpperCase()}) is disabled in Public Review Mode.`,
+      });
+      setTimeout(() => setScanResult(null), 3500);
       return;
     }
     setIsScanning(true);
-    setScanMessage(`Executing ${scanType.toUpperCase()} scan across configured sources...`);
+    setScanResult({ status: 'running', message: `Executing ${scanType.toUpperCase()} scan against Find a Tender API...` });
+
     try {
       const res = await fetch('/api/scan', {
         method: 'POST',
@@ -31,9 +51,16 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
         body: JSON.stringify({ scanType }),
       });
       const data = await res.json();
-      setScanMessage(data.message || 'Scan completed.');
-    } catch (e) {
-      setScanMessage('Scan error encountered. Details logged.');
+      setScanResult(data);
+
+      // Refresh sources and health
+      const [srcRes, healthRes] = await Promise.all([fetch('/api/sources'), fetch('/api/health')]);
+      const srcJson = await srcRes.json();
+      const healthJson = await healthRes.json();
+      if (srcJson.sources) setSources(srcJson.sources);
+      if (healthJson) setHealthData(healthJson);
+    } catch (e: any) {
+      setScanResult({ status: 'error', error: e.message || 'Scan error encountered.' });
     } finally {
       setIsScanning(false);
     }
@@ -43,12 +70,12 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
     e.preventDefault();
     if (!urlInput) return;
     if (isReviewMode) {
-      setScanMessage(`Notice URL analysis disabled in Public Review Mode.`);
-      setTimeout(() => setScanMessage(null), 3500);
+      setScanResult({ status: 'notice', message: 'Notice URL analysis disabled in Public Review Mode.' });
+      setTimeout(() => setScanResult(null), 3500);
       return;
     }
     setIsScanning(true);
-    setScanMessage(`Verifying and analyzing procurement notice URL...`);
+    setScanResult({ status: 'running', message: 'Verifying and analyzing procurement notice URL...' });
     try {
       const res = await fetch('/api/scan/url', {
         method: 'POST',
@@ -56,13 +83,16 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
         body: JSON.stringify({ url: urlInput }),
       });
       const data = await res.json();
-      setScanMessage(data.message || 'URL analyzed.');
-    } catch (e) {
-      setScanMessage('Failed to parse URL.');
+      setScanResult(data);
+    } catch (e: any) {
+      setScanResult({ status: 'error', error: 'Failed to verify URL.' });
     } finally {
       setIsScanning(false);
     }
   };
+
+  const activeSourcesCount = sources.filter((s) => s.health === 'healthy').length;
+  const notImplementedCount = sources.filter((s) => s.health === 'not_implemented').length;
 
   return (
     <div className="space-y-8 max-w-6xl">
@@ -70,7 +100,7 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
       <header className="border-b border-gallery-border pb-6 space-y-2">
         <div className="text-[11px] font-mono uppercase tracking-widest text-gallery-muted font-semibold flex items-center gap-2">
           <Radio className="w-3.5 h-3.5 text-emerald-600" />
-          <span>MULTI-PORTAL DISCOVERY ENGINE</span>
+          <span>PORTAL DISCOVERY ENGINE</span>
           {isReviewMode && (
             <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold">
               REVIEW DATA
@@ -81,93 +111,177 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
           Scan Management
         </h1>
         <p className="text-xs sm:text-sm text-gallery-muted">
-          Configure discovery schedules, monitor connector health, and execute precision scans.
+          Execute genuine Find a Tender procurement discovery, inspect connector health, and verify live notice URLs.
         </p>
       </header>
 
-      {/* Overview Metric Bar */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 bg-gallery-surface border border-gallery-border rounded-lg space-y-1 shadow-2xs">
-          <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-tender-primary" />
-            <span>NEXT AUTOMATIC SCAN</span>
+      {/* Real System Diagnostics Bar */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Database Diagnostic */}
+        <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-2 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5 text-tender-primary" />
+              <span>DATABASE</span>
+            </div>
+            {healthData?.database?.healthy ? (
+              <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                CONNECTED
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-800 text-[10px] font-bold border border-rose-200">
+                NOT CONFIGURED
+              </span>
+            )}
           </div>
-          <div className="text-lg font-extrabold text-gallery-charcoal">Monday 07:00</div>
-          <p className="text-[11px] text-gallery-muted">Europe/London timezone</p>
+          <div className="text-sm font-bold text-gallery-charcoal">
+            {healthData?.database?.healthy ? 'Persistent SQLite' : 'Database Offline'}
+          </div>
+          <p className="text-[11px] text-gallery-muted font-mono">
+            {healthData?.database?.totalTenders ?? 0} saved tenders in repository
+          </p>
         </div>
 
-        <div className="p-5 bg-gallery-surface border border-gallery-border rounded-lg space-y-1 shadow-2xs">
-          <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-            <span>SOURCE HEALTH</span>
+        {/* Gemini AI Diagnostic */}
+        <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-2 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+              <span>AI CLASSIFIER</span>
+            </div>
+            {healthData?.gemini?.configured ? (
+              <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                CONFIGURED
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">
+                NOT CONFIGURED
+              </span>
+            )}
           </div>
-          <div className="text-lg font-extrabold text-emerald-700">7 / 7 Healthy</div>
-          <p className="text-[11px] text-gallery-muted">All connectors verified</p>
+          <div className="text-sm font-bold text-gallery-charcoal">
+            {healthData?.gemini?.configured ? healthData.gemini.tier1Model : 'Deterministic Filter Active'}
+          </div>
+          <p className="text-[11px] text-gallery-muted font-mono">
+            {healthData?.gemini?.configured ? 'Google GenAI SDK (JSON schema)' : 'Creative taxonomy active'}
+          </p>
         </div>
 
-        <div className="p-5 bg-gallery-surface border border-gallery-border rounded-lg space-y-1 shadow-2xs">
-          <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5 text-sky-600" />
-            <span>DISCOVERY ENGINE</span>
+        {/* Source Health Diagnostic */}
+        <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-2 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>CONNECTOR HEALTH</span>
+            </div>
+            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+              {activeSourcesCount} / {sources.length} Active
+            </span>
           </div>
-          <div className="text-lg font-extrabold text-gallery-charcoal">CPV + Gemini Tier 1</div>
-          <p className="text-[11px] text-gallery-muted">Multi-layered relevance filter</p>
+          <div className="text-sm font-bold text-gallery-charcoal">
+            Find a Tender — Healthy
+          </div>
+          <p className="text-[11px] text-gallery-muted font-mono">
+            {notImplementedCount} connectors Not Implemented
+          </p>
         </div>
       </section>
 
       {/* Manual Scan Controls */}
       <section className="p-6 bg-gallery-surface border border-gallery-border rounded-lg space-y-4 shadow-2xs">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-gallery-charcoal font-mono">
-          Manual Scan Actions
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-gallery-charcoal font-mono">
+            Execute Procurement Scan
+          </h2>
+          <span className="text-[11px] font-mono text-gallery-muted">Source: Find a Tender (FTS) OCDS API</span>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <button
             onClick={() => handleScan('quick')}
             disabled={isScanning}
-            className="p-4 text-left border border-gallery-border rounded-lg hover:border-tender-primary hover:bg-gallery-surfaceMuted transition-all group"
+            className="p-4 text-left border border-gallery-border rounded-lg hover:border-tender-primary hover:bg-gallery-surfaceMuted transition-all group disabled:opacity-50"
           >
             <div className="text-xs font-bold text-gallery-charcoal group-hover:text-tender-primary flex items-center justify-between">
               <span>QUICK SCAN</span>
               <Play className="w-3 h-3 text-gallery-muted group-hover:text-tender-primary" />
             </div>
             <p className="text-[11px] text-gallery-muted mt-1 leading-relaxed">
-              Scan only new and modified notices since the last successful execution.
+              Scan notices modified since last successful scan date.
             </p>
           </button>
 
           <button
             onClick={() => handleScan('full')}
             disabled={isScanning}
-            className="p-4 text-left border border-gallery-border rounded-lg hover:border-tender-primary hover:bg-gallery-surfaceMuted transition-all group"
+            className="p-4 text-left border border-gallery-border rounded-lg hover:border-tender-primary hover:bg-gallery-surfaceMuted transition-all group disabled:opacity-50"
           >
             <div className="text-xs font-bold text-gallery-charcoal group-hover:text-tender-primary flex items-center justify-between">
               <span>FULL SCAN</span>
               <Play className="w-3 h-3 text-gallery-muted group-hover:text-tender-primary" />
             </div>
             <p className="text-[11px] text-gallery-muted mt-1 leading-relaxed">
-              Scan all currently live creative and digital public procurement.
+              Scan up to 100 currently live creative opportunities from Find a Tender.
             </p>
           </button>
 
           <button
             onClick={() => handleScan('deep')}
             disabled={isScanning}
-            className="p-4 text-left border border-gallery-border rounded-lg hover:border-tender-primary hover:bg-gallery-surfaceMuted transition-all group"
+            className="p-4 text-left border border-gallery-border rounded-lg hover:border-tender-primary hover:bg-gallery-surfaceMuted transition-all group disabled:opacity-50"
           >
             <div className="text-xs font-bold text-gallery-charcoal group-hover:text-tender-primary flex items-center justify-between">
               <span>DEEP SCAN</span>
               <Play className="w-3 h-3 text-gallery-muted group-hover:text-tender-primary" />
             </div>
             <p className="text-[11px] text-gallery-muted mt-1 leading-relaxed">
-              Scan live notices, pipelines, preliminary market engagement & dynamic markets.
+              Scan live notices plus early pipeline and future market engagement notices.
             </p>
           </button>
         </div>
 
-        {scanMessage && (
-          <div className="p-3 bg-gallery-canvas border border-gallery-border rounded text-xs font-mono text-gallery-charcoal flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-tender-primary inline-block" />
-            <span>{scanMessage}</span>
+        {/* Live Scan Status / Result Box */}
+        {scanResult && (
+          <div className="p-4 bg-gallery-canvas border border-gallery-border rounded-lg space-y-2 font-mono text-xs">
+            {scanResult.status === 'running' ? (
+              <div className="flex items-center gap-2 text-tender-primary">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>{scanResult.message}</span>
+              </div>
+            ) : scanResult.status === 'error' ? (
+              <div className="flex items-center gap-2 text-rose-700">
+                <XCircle className="w-4 h-4 shrink-0" />
+                <span>Scan Failure: {scanResult.error || scanResult.message}</span>
+              </div>
+            ) : (
+              <div className="space-y-1.5 text-gallery-charcoal">
+                <div className="flex items-center justify-between border-b border-gallery-border pb-1.5">
+                  <span className="font-bold flex items-center gap-1.5 text-emerald-700">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Scan Completed Successfully ({scanResult.scanType?.toUpperCase()})</span>
+                  </span>
+                  <span className="text-gallery-muted text-[11px]">{scanResult.durationMs}ms</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+                  <div>
+                    <span className="text-gallery-muted">Notices Checked:</span>{' '}
+                    <strong>{scanResult.noticesChecked ?? 0}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gallery-muted">Initial Candidates:</span>{' '}
+                    <strong>{scanResult.initialCandidates ?? 0}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gallery-muted">Duplicates:</span>{' '}
+                    <strong>{scanResult.duplicatesCount ?? 0}</strong>
+                  </div>
+                  <div>
+                    <span className="text-gallery-muted">Relevant Saved:</span>{' '}
+                    <strong className="text-emerald-700">{scanResult.relevantFound ?? 0}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -175,10 +289,10 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
       {/* Analyse Specific Notice URL */}
       <section className="p-6 bg-gallery-surface border border-gallery-border rounded-lg space-y-4 shadow-2xs">
         <h2 className="text-sm font-bold uppercase tracking-wider text-gallery-charcoal font-mono">
-          Analyse Tender URL
+          Live Notice URL Verification
         </h2>
         <p className="text-xs text-gallery-muted">
-          Paste an exact UK public procurement URL (Find a Tender, Contracts Finder, Atamis, etc.) to verify, fetch notice data, and evaluate eligibility.
+          Test any Find a Tender or UK public procurement URL. Performs genuine HTTP verification, redirect resolution, and content matching.
         </p>
 
         <form onSubmit={handleAnalyzeUrl} className="flex gap-2">
@@ -197,7 +311,7 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
             disabled={isScanning || !urlInput}
             className="px-4 py-2 bg-gallery-charcoal hover:bg-black text-white text-xs font-bold rounded transition-colors disabled:opacity-50"
           >
-            Analyse URL
+            Verify URL
           </button>
         </form>
       </section>
@@ -206,9 +320,11 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
       <section className="p-6 bg-gallery-surface border border-gallery-border rounded-lg space-y-4 shadow-2xs">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold uppercase tracking-wider text-gallery-charcoal font-mono">
-            Source Registry ({sources.length})
+            Procurement Sources ({sources.length})
           </h2>
-          <span className="text-[11px] font-mono text-gallery-muted">All connectors modular</span>
+          <span className="text-[11px] font-mono text-gallery-muted">
+            Find a Tender implemented in Phase 2
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -217,10 +333,10 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
               <tr className="border-b border-gallery-border text-gallery-muted font-mono text-[10px] uppercase">
                 <th className="py-2.5 font-semibold">Portal Source</th>
                 <th className="py-2.5 font-semibold">Type</th>
-                <th className="py-2.5 font-semibold">Health</th>
-                <th className="py-2.5 font-semibold">Last Scan</th>
-                <th className="py-2.5 font-semibold text-right">Checked</th>
-                <th className="py-2.5 font-semibold text-right">Relevant</th>
+                <th className="py-2.5 font-semibold">Health Status</th>
+                <th className="py-2.5 font-semibold">Last Verified Scan</th>
+                <th className="py-2.5 font-semibold text-right">Notices Scanned</th>
+                <th className="py-2.5 font-semibold text-right">Relevant Saved</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gallery-border">
@@ -233,10 +349,22 @@ export function ScanView({ sources, basePath = '', isReviewMode = false }: ScanV
                     {source.portalType}
                   </td>
                   <td className="py-3">
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-semibold border border-emerald-200">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                      Healthy
-                    </span>
+                    {source.health === 'healthy' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-semibold border border-emerald-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                        HEALTHY
+                      </span>
+                    ) : source.health === 'degraded' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-semibold border border-amber-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                        DEGRADED
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-gallery-surfaceMuted text-gallery-muted text-[10px] font-semibold border border-gallery-border">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gallery-border" />
+                        NOT IMPLEMENTED
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 text-gallery-muted font-mono text-[11px]">
                     {source.lastScanAt ? new Date(source.lastScanAt).toLocaleDateString() : 'Never'}

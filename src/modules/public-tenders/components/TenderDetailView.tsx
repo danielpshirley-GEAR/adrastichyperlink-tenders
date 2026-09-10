@@ -29,6 +29,30 @@ export function TenderDetailView({
   basePath = '',
   isReviewMode = false,
 }: TenderDetailViewProps) {
+  const [currentDecision, setCurrentDecision] = React.useState<any>(tender.bidDecisionState || 'UNDECIDED');
+  const [appId, setAppId] = React.useState<string | null>(null);
+
+  const handleDecisionChange = async (newDecision: 'BID' | 'PASS' | 'WATCH') => {
+    setCurrentDecision(newDecision);
+    if (isReviewMode) return;
+
+    try {
+      const res = await fetch(`/api/tenders/${tender.id}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision: newDecision }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.application?.id) {
+          setAppId(data.application.id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to save bid decision:', err);
+    }
+  };
+
   return (
     <div className="space-y-8 max-w-5xl">
       {/* Back link */}
@@ -98,45 +122,41 @@ export function TenderDetailView({
       {/* Key Metric Snapshot Grid */}
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-1">
-          <div className="text-[11px] font-mono text-gallery-muted flex items-center gap-1">
+          <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
             <Coins className="w-3.5 h-3.5 text-tender-primary" />
-            <span>ESTIMATED VALUE</span>
+            <span>CONTRACT VALUE</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">
-            {tender.valueDescription || `£${tender.valueAmount?.toLocaleString()}`}
+            {tender.valueDescription || (tender.valueAmount ? `£${tender.valueAmount.toLocaleString()}` : 'TBC')}
           </div>
-          <div className="text-[10px] text-gallery-muted">{tender.valueCurrency} (ex VAT)</div>
+          <div className="text-[10px] text-gallery-muted">{tender.valueCurrency || 'GBP'} (Fixed/Framework)</div>
         </div>
 
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-1">
-          <div className="text-[11px] font-mono text-gallery-muted flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5 text-amber-600" />
+          <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-tender-primary" />
             <span>SUBMISSION DEADLINE</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">
-            {new Date(tender.submissionDeadline).toLocaleDateString()}
+            {tender.submissionDeadline ? new Date(tender.submissionDeadline).toLocaleDateString() : 'TBC'}
           </div>
-          <div className="text-[10px] font-mono text-amber-700 font-semibold">
-            {tender.daysRemaining} days remaining
-          </div>
+          <div className="text-[10px] text-gallery-muted">{tender.daysRemaining} days remaining</div>
         </div>
 
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-1">
-          <div className="text-[11px] font-mono text-gallery-muted flex items-center gap-1">
-            <Calendar className="w-3.5 h-3.5 text-sky-600" />
-            <span>CLARIFICATION END</span>
+          <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-tender-primary" />
+            <span>DISCOVERED ON</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">
-            {tender.clarificationDeadline
-              ? new Date(tender.clarificationDeadline).toLocaleDateString()
-              : 'TBC'}
+            {tender.discoveredAt ? new Date(tender.discoveredAt).toLocaleDateString() : 'Today'}
           </div>
-          <div className="text-[10px] text-gallery-muted">Questions cutoff</div>
+          <div className="text-[10px] text-gallery-muted">Automated FTS Ingestion</div>
         </div>
 
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-1">
-          <div className="text-[11px] font-mono text-gallery-muted flex items-center gap-1">
-            <Building2 className="w-3.5 h-3.5 text-gallery-faint" />
+          <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5 text-tender-primary" />
             <span>BUYER SECTOR</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">{tender.buyerType}</div>
@@ -145,10 +165,24 @@ export function TenderDetailView({
       </section>
 
       {/* Decision Gate */}
-      <BidDecision
-        currentDecision={tender.bidDecisionState}
-        isReviewMode={isReviewMode}
-      />
+      <div className="space-y-3">
+        <BidDecision
+          currentDecision={currentDecision}
+          isReviewMode={isReviewMode}
+          onDecisionChange={handleDecisionChange}
+        />
+        {appId && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-900 flex items-center justify-between">
+            <span className="font-semibold">Application project initiated. Ready for questions & drafting.</span>
+            <Link
+              href={`${basePath}/applications/${appId}`}
+              className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold transition-colors"
+            >
+              Open Application Workspace &rarr;
+            </Link>
+          </div>
+        )}
+      </div>
 
       {/* Tender Specification & Detailed Overview */}
       <section className="p-6 bg-gallery-surface border border-gallery-border rounded-lg space-y-4 shadow-2xs">

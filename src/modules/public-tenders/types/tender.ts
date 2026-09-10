@@ -58,6 +58,11 @@ export interface TenderSummary {
   isArchived: boolean;
   discoveredAt: string;
   lastVerifiedAt: string;
+  bidDecisionState?: BidDecisionType | 'UNDECIDED';
+  description?: string;
+  evaluationCriteria?: Array<{ criterion: string; weightingPercentage: number }>;
+  requirements?: TenderRequirement[];
+  documents?: TenderDocumentItem[];
 }
 
 export interface TenderRequirement {

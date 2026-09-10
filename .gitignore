@@ -6,5 +6,9 @@ out
 .wrangler
 .bin
 .data
+*.db
+.env
+.env.local
+.env.*.local
 scratch_test.png
 .DS_Store

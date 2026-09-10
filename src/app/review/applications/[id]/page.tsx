@@ -10,12 +10,13 @@ export function generateStaticParams() {
   }));
 }
 
-export default function ReviewApplicationDetailPage({
+export default async function ReviewApplicationDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const application = reviewApplications.find((a) => a.id === params.id);
+  const { id } = await params;
+  const application = reviewApplications.find((a) => a.id === id);
 
   if (!application) {
     notFound();

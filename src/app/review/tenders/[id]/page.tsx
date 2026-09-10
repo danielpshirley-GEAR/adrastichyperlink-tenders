@@ -10,12 +10,13 @@ export function generateStaticParams() {
   }));
 }
 
-export default function ReviewTenderDetailPage({
+export default async function ReviewTenderDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const tender = reviewTenders.find((t) => t.id === params.id);
+  const { id } = await params;
+  const tender = reviewTenders.find((t) => t.id === id);
 
   if (!tender) {
     notFound();

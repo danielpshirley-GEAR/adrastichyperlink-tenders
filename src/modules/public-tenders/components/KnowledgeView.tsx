@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { BookOpen, AlertTriangle, CheckCircle2, ShieldCheck, FileCheck } from 'lucide-react';
+import { BookOpen, AlertTriangle, CheckCircle2, ShieldAlert, FileQuestion } from 'lucide-react';
 
 const TABS = [
   'COMPANY',
@@ -70,9 +70,13 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
             All bid responses written by Gemini are strictly grounded in verified facts from this Knowledge Base.
             Concept or speculative demo work (TeleMaya, Amanda, MonX, Rainee) is explicitly labelled and never presented as commissioned public-sector contracts.
           </p>
-          {isReviewMode && (
+          {isReviewMode ? (
             <p className="text-[11px] font-mono text-amber-800 font-semibold pt-1">
               [REVIEW MODE: Using safe, sanitized review data — no confidential client references or internal accounts exposed]
+            </p>
+          ) : (
+            <p className="text-[11px] font-mono text-amber-800 font-semibold pt-1">
+              [PRODUCTION: Truthful initial state — unconfirmed facts remain marked MISSING INFORMATION until explicitly verified]
             </p>
           )}
         </div>
@@ -84,26 +88,39 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
           <article className="p-5 bg-gallery-surface border border-gallery-border rounded-lg space-y-2 shadow-2xs">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono uppercase text-gallery-muted">Company Legal Entity</span>
-              {isReviewMode && (
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold">
+              {isReviewMode ? (
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold">
                   REVIEW DATA
+                </span>
+              ) : (
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-bold">
+                  MISSING INFORMATION
                 </span>
               )}
             </div>
-            <h3 className="text-sm font-bold text-gallery-charcoal">Adrastichyperlink Limited</h3>
-            <p className="text-xs text-gallery-muted">
-              Specialist creative studio & motion direction partner. Company No: 12345678 (England & Wales).
-            </p>
+            {isReviewMode ? (
+              <>
+                <h3 className="text-sm font-bold text-gallery-charcoal">Adrastichyperlink Limited</h3>
+                <p className="text-xs text-gallery-muted">
+                  Specialist creative studio & motion direction partner. Company No: 12345678 (England & Wales).
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-sm font-bold text-gallery-charcoal text-amber-900">Entity Unconfirmed</h3>
+                <p className="text-xs text-gallery-muted">
+                  Company registration number, registered trading address, and VAT registration are not yet entered. Awaiting Daniel's input before applying to corporate tenders.
+                </p>
+              </>
+            )}
           </article>
 
           <article className="p-5 bg-gallery-surface border border-gallery-border rounded-lg space-y-2 shadow-2xs">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono uppercase text-gallery-muted">Founder & Key Personnel</span>
-              {isReviewMode && (
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold">
-                  REVIEW DATA
-                </span>
-              )}
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                VERIFIED
+              </span>
             </div>
             <h3 className="text-sm font-bold text-gallery-charcoal">Daniel Shirley</h3>
             <p className="text-xs text-gallery-muted">
@@ -115,35 +132,80 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
 
       {activeTab === 'CREDENTIALS' && (
         <div className="space-y-3">
-          <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-gallery-charcoal">Professional Indemnity Insurance</div>
-              <div className="text-[11px] text-gallery-muted">Hiscox Policy — £2,000,000 aggregate cover</div>
-            </div>
-            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-              Verified Active
-            </span>
-          </article>
+          {isReviewMode ? (
+            <>
+              <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-gallery-charcoal">Professional Indemnity Insurance</div>
+                  <div className="text-[11px] text-gallery-muted">Hiscox Policy — £2,000,000 aggregate cover</div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
+                  REVIEW FIXTURE
+                </span>
+              </article>
 
-          <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-gallery-charcoal">Public Liability Insurance</div>
-              <div className="text-[11px] text-gallery-muted">Hiscox Policy — £5,000,000 cover</div>
-            </div>
-            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-              Verified Active
-            </span>
-          </article>
+              <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-gallery-charcoal">Public Liability Insurance</div>
+                  <div className="text-[11px] text-gallery-muted">Hiscox Policy — £5,000,000 cover</div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
+                  REVIEW FIXTURE
+                </span>
+              </article>
 
-          <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
-            <div className="space-y-1">
-              <div className="text-xs font-bold text-gallery-charcoal">Cyber Essentials Certification</div>
-              <div className="text-[11px] text-gallery-muted">Self-assessment complete; verified audit scheduled for central government bids</div>
-            </div>
-            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">
-              Action Required
-            </span>
-          </article>
+              <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-gallery-charcoal">Cyber Essentials Certification</div>
+                  <div className="text-[11px] text-gallery-muted">Self-assessment complete; verified audit scheduled for central government bids</div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">
+                  Action Required
+                </span>
+              </article>
+            </>
+          ) : (
+            <>
+              <article className="p-4 bg-gallery-surface border border-amber-200 rounded-lg flex items-center justify-between shadow-2xs">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-gallery-charcoal flex items-center gap-2">
+                    <FileQuestion className="w-4 h-4 text-amber-600" />
+                    <span>Professional Indemnity Insurance</span>
+                  </div>
+                  <div className="text-[11px] text-gallery-muted">Policy provider, coverage limit, and certificate document are unconfirmed.</div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
+                  MISSING INFORMATION
+                </span>
+              </article>
+
+              <article className="p-4 bg-gallery-surface border border-amber-200 rounded-lg flex items-center justify-between shadow-2xs">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-gallery-charcoal flex items-center gap-2">
+                    <FileQuestion className="w-4 h-4 text-amber-600" />
+                    <span>Public Liability Insurance</span>
+                  </div>
+                  <div className="text-[11px] text-gallery-muted">Coverage amount and active insurance schedule not yet uploaded.</div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
+                  MISSING INFORMATION
+                </span>
+              </article>
+
+              <article className="p-4 bg-gallery-surface border border-amber-200 rounded-lg flex items-center justify-between shadow-2xs">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-gallery-charcoal flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-amber-600" />
+                    <span>Cyber Essentials Certification</span>
+                  </div>
+                  <div className="text-[11px] text-gallery-muted">No active IASME or Cyber Essentials certificate reference on file.</div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
+                  MISSING INFORMATION
+                </span>
+              </article>
+            </>
+          )}
         </div>
       )}
 
@@ -157,13 +219,13 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
               </span>
             </div>
             <p className="text-xs text-gallery-muted leading-relaxed">
-              Daniel Shirley\'s genuine Ministry of Defence project experience supporting high-level claims on public-sector working, complex information design, and visual communication. Confidential operational details strictly protected.
+              Daniel Shirley's genuine Ministry of Defence project experience supporting high-level claims on public-sector working, complex information design, and visual communication. Confidential operational details strictly protected.
             </p>
           </article>
 
           <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-2 shadow-2xs">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-gallery-charcoal">Concept Demonstrations (TeleMaya, Amanda, MonX, Rainee)</span>
+              <span className="text-xs font-bold text-gallery-charcoal">Concept Demonstrators (TeleMaya, Amanda, MonX, Rainee)</span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gallery-surfaceMuted text-gallery-muted font-bold border border-gallery-border">
                 CONCEPT WORK ONLY
               </span>
@@ -180,7 +242,7 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
           <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
           <div className="text-xs font-bold text-gallery-charcoal">{activeTab} Repository</div>
           <p className="text-xs text-gallery-muted">
-            Verified corporate evidence items and approved answers will populate here.
+            Verified corporate evidence items and approved answers will populate here as Daniel enters them.
           </p>
         </div>
       )}

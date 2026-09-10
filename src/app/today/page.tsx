@@ -8,19 +8,23 @@ import { TenderSummary } from '@/modules/public-tenders/types/tender';
 
 export default function TodayPage() {
   const [tenders, setTenders] = useState<TenderSummary[]>([]);
+  const [applicationsCount, setApplicationsCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/tenders')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.tenders) setTenders(data.tenders);
+    Promise.all([
+      fetch('/api/tenders').then((res) => res.json()),
+      fetch('/api/applications').then((res) => res.json()),
+    ])
+      .then(([tendersData, appsData]) => {
+        if (tendersData.tenders) setTenders(tendersData.tenders);
+        if (appsData.applications) setApplicationsCount(appsData.applications.length);
       })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
   }, []);
 
-  // Section 74 First Run state when database contains 0 scanned tenders
+  // First Run state when database contains 0 scanned tenders
   if (!loading && tenders.length === 0) {
     return <FirstRunEmptyState onScanTriggered={() => window.location.reload()} />;
   }
@@ -29,7 +33,7 @@ export default function TodayPage() {
     greeting: 'Good morning, Daniel.',
     summary: 'Operational summary of UK creative procurement, active applications, and immediate deadlines.',
     qualifiedTendersCount: tenders.filter((t) => t.qualification === 'STRONG').length,
-    activeApplicationsCount: 0,
+    activeApplicationsCount: applicationsCount,
     missingInformationCount: 0,
     immediateActions: [],
   };
