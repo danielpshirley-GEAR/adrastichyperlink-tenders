@@ -1,0 +1,10 @@
+node_modules
+.next
+out
+.chrome-*
+.vercel
+.wrangler
+.bin
+.data
+scratch_test.png
+.DS_Store

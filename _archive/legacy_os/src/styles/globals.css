@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-studio: #fafafb;
+  --card-studio: #ffffff;
+  --surface-studio: #f1f1f5;
+  --border-studio: #e2e2ea;
+  --text-studio: #111116;
+  --muted-studio: #636674;
+}
+
+body {
+  background-color: var(--bg-studio);
+  color: var(--text-studio);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Studio custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f5;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d1dc;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b5b5c4;
+}
+
+/* Custom selection */
+::selection {
+  background: #111116;
+  color: #ffffff;
+}
+
+/* Modernist Typography styles */
+.studio-display {
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  font-weight: 800;
+}
+
+.studio-title {
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.studio-subtitle {
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+.studio-mono {
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.02em;
+}
