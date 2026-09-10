@@ -26,12 +26,12 @@ export interface RawNoticeRecord {
   sourceId: string;
   noticeId: string;
   ocid?: string;
-  title: string;
-  buyerName: string;
+  title: string | null;
+  buyerName: string | null;
   buyerType?: string;
   description: string;
   valueAmount?: number;
-  valueCurrency?: string;
+  valueCurrency?: string | null;
   publishedAt?: string | null;
   submissionDeadline?: string | null;
   clarificationDeadline?: string | null;

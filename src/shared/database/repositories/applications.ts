@@ -122,11 +122,13 @@ function mapRowToApplication(row: any): TenderApplication {
     daysRemaining,
     status: (row.status?.toUpperCase() === 'SUBMITTED' ? 'SUBMITTED' : row.status?.toUpperCase() === 'READY_FOR_REVIEW' ? 'READY_FOR_REVIEW' : 'DRAFT') as ApplicationStatus,
     bidDecision: 'BID',
-    overallSuitabilityScore: 88,
-    winThemes: ['Agile Motion Delivery', 'Verified Brand Compliance'],
-    questionsCount: 0,
-    factsRequiredCount: 0,
+    overallSuitabilityScore: typeof row.overall_suitability_score === 'number' ? row.overall_suitability_score : null,
+    winThemes: Array.isArray(row.win_themes) ? row.win_themes : (typeof row.win_themes === 'string' ? JSON.parse(row.win_themes) : []),
+    questionsCount: typeof row.questions_count === 'number' ? row.questions_count : 0,
+    factsRequiredCount: typeof row.facts_required_count === 'number' ? row.facts_required_count : 0,
     lastUpdated: row.last_updated || row.updated_at || new Date().toISOString(),
-    questions: [],
+    questions: Array.isArray(row.questions) ? row.questions : [],
+    factsRequired: [],
+    AIAnalysisStatus: 'NOT_RUN',
   };
 }

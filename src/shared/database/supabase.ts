@@ -2,12 +2,17 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ITendersRepository, ISourcesRepository, IBuyersRepository, IApplicationsRepository } from './interfaces';
 import { TenderSummary, Qualification, VerificationGrade, BidDecisionType } from '@/modules/public-tenders/types/tender';
+import { TenderApplication, ApplicationStatus } from '@/modules/public-tenders/types/application';
 import { SourceRecord, ScanRunRecord } from './repositories/sources';
 import crypto from 'crypto';
 
 let supabaseClientInstance: SupabaseClient | null = null;
 
 export function isSupabaseConfigured(): boolean {
+  if (process.env.NODE_ENV === 'production') {
+    // Production backend MUST require SUPABASE_SERVICE_ROLE_KEY. Never substitute with anon key.
+    return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  }
   return Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY));
 }
 
@@ -17,7 +22,9 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
   if (!supabaseClientInstance) {
     const url = process.env.SUPABASE_URL!;
-    const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)!;
+    const key = process.env.NODE_ENV === 'production'
+      ? process.env.SUPABASE_SERVICE_ROLE_KEY!
+      : (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)!;
     supabaseClientInstance = createClient(url, key, {
       auth: { persistSession: false },
     });
@@ -53,29 +60,40 @@ export class SupabaseTendersRepository implements ITendersRepository {
     if (options?.offset) query = query.range(options.offset, options.offset + (options.limit || 20) - 1);
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) throw new Error(`Failed to get tenders: ${error.message}`);
     return (data || []).map((row) => this.mapRow(row));
   }
 
   async getById(id: string): Promise<TenderSummary | null> {
     const { data, error } = await this.client.from('tenders').select('*').eq('id', id).maybeSingle();
-    if (error || !data) return null;
+    if (error) throw new Error(`Failed to get tender by id: ${error.message}`);
+    if (!data) return null;
     return this.mapRow(data);
   }
 
   async getByCanonicalReference(ref: string): Promise<TenderSummary | null> {
     const { data, error } = await this.client.from('tenders').select('*').eq('canonical_reference', ref).maybeSingle();
-    if (error || !data) return null;
+    if (error) throw new Error(`Failed to get tender by reference: ${error.message}`);
+    if (!data) return null;
     return this.mapRow(data);
   }
 
   async getByOcid(ocid: string): Promise<TenderSummary | null> {
     const { data, error } = await this.client.from('tenders').select('*').eq('ocid', ocid).maybeSingle();
-    if (error || !data) return null;
+    if (error) throw new Error(`Failed to get tender by ocid: ${error.message}`);
+    if (!data) return null;
     return this.mapRow(data);
   }
 
-  async save(tender: Partial<TenderSummary> & { canonicalReference: string; title: string; buyerName: string }): Promise<TenderSummary> {
+  async save(
+    tender: Partial<TenderSummary> & {
+      canonicalReference: string;
+      title?: string | null;
+      buyerName?: string | null;
+      latestNoticeId?: string | null;
+      buyerId?: string | null;
+    }
+  ): Promise<TenderSummary> {
     // Deduplicate: prioritize OCID, then canonicalReference
     let existing: TenderSummary | null = null;
     if (tender.ocid) {
@@ -96,19 +114,26 @@ export class SupabaseTendersRepository implements ITendersRepository {
     const lifecycleStatus = isPastDeadline ? 'EXPIRED' : (tender.lifecycleStatus || existing?.lifecycleStatus || 'ACTIVE');
     const isArchived = isPastDeadline || (tender.isArchived ?? existing?.isArchived ?? false);
 
+    // Identity preservation: when found by OCID, preserve original canonical_reference
+    const canonicalReference = existing ? existing.canonicalReference : tender.canonicalReference;
+    const latestNoticeId = tender.latestNoticeId || tender.canonicalReference;
+    const buyerId = tender.buyerId || (existing as any)?.buyerId || null;
+
     const payload: any = {
       id,
-      canonical_reference: tender.canonicalReference,
+      canonical_reference: canonicalReference,
+      latest_notice_id: latestNoticeId,
       ocid: tender.ocid || existing?.ocid || null,
-      title: tender.title,
+      title: tender.title !== undefined ? tender.title : (existing?.title ?? null),
       plain_english_summary: tender.plainEnglishSummary ?? existing?.plainEnglishSummary ?? null,
-      buyer_name: tender.buyerName,
-      value_amount: tender.valueAmount ?? existing?.valueAmount ?? null,
-      value_currency: tender.valueCurrency || existing?.valueCurrency || 'GBP',
+      buyer_id: buyerId,
+      buyer_name: tender.buyerName !== undefined ? tender.buyerName : (existing?.buyerName ?? null),
+      value_amount: tender.valueAmount !== undefined ? tender.valueAmount : (existing?.valueAmount ?? null),
+      value_currency: tender.valueCurrency || existing?.valueCurrency || null,
       value_description: tender.valueDescription ?? existing?.valueDescription ?? null,
-      published_at: tender.publishedAt ?? existing?.publishedAt ?? null,
-      submission_deadline: tender.submissionDeadline ?? existing?.submissionDeadline ?? null,
-      clarification_deadline: tender.clarificationDeadline ?? existing?.clarificationDeadline ?? null,
+      published_at: tender.publishedAt !== undefined ? tender.publishedAt : (existing?.publishedAt ?? null),
+      submission_deadline: tender.submissionDeadline !== undefined ? tender.submissionDeadline : (existing?.submissionDeadline ?? null),
+      clarification_deadline: tender.clarificationDeadline !== undefined ? tender.clarificationDeadline : (existing?.clarificationDeadline ?? null),
       qualification: tender.qualification || existing?.qualification || 'POSSIBLE',
       deterministic_result: tender.deterministicResult ?? existing?.deterministicResult ?? null,
       ai_result: tender.aiResult ?? existing?.aiResult ?? null,
@@ -127,12 +152,12 @@ export class SupabaseTendersRepository implements ITendersRepository {
       payload.discovered_at = now;
       payload.last_verified_at = now;
       const { data, error } = await this.client.from('tenders').insert(payload).select().single();
-      if (error) throw error;
+      if (error) throw new Error(`Failed to insert tender: ${error.message}`);
       return this.mapRow(data);
     } else {
       payload.last_verified_at = now;
       const { data, error } = await this.client.from('tenders').update(payload).eq('id', id).select().single();
-      if (error) throw error;
+      if (error) throw new Error(`Failed to update tender: ${error.message}`);
       return this.mapRow(data);
     }
   }
@@ -143,9 +168,11 @@ export class SupabaseTendersRepository implements ITendersRepository {
       .update({ bid_decision_state: decision, updated_at: new Date().toISOString() })
       .eq('id', id);
 
-    if (tenderErr) return false;
+    if (tenderErr) {
+      throw new Error(`Failed to update tender bid decision: ${tenderErr.message}`);
+    }
 
-    await this.client.from('bid_decisions').upsert(
+    const { error: bidErr } = await this.client.from('bid_decisions').upsert(
       {
         id: crypto.randomUUID(),
         tender_id: id,
@@ -156,17 +183,21 @@ export class SupabaseTendersRepository implements ITendersRepository {
       { onConflict: 'tender_id' }
     );
 
+    if (bidErr) {
+      throw new Error(`Failed to record bid decision: ${bidErr.message}`);
+    }
+
     return true;
   }
 
   async countByTab(): Promise<Record<string, number>> {
     const { data, error } = await this.client.from('tenders').select('qualification, bid_decision_state, is_archived');
-    if (error || !data) {
-      return { ALL: 0, STRONG: 0, POSSIBLE: 0, BID: 0, WATCH: 0, PASSED: 0, ARCHIVED: 0 };
+    if (error) {
+      throw new Error(`Failed to count tenders: ${error.message}`);
     }
 
     const counts = { ALL: 0, STRONG: 0, POSSIBLE: 0, BID: 0, WATCH: 0, PASSED: 0, ARCHIVED: 0 };
-    for (const r of data) {
+    for (const r of data || []) {
       if (r.is_archived) {
         counts.ARCHIVED++;
       } else {
@@ -193,13 +224,15 @@ export class SupabaseTendersRepository implements ITendersRepository {
     return {
       id: row.id,
       canonicalReference: row.canonical_reference,
+      latestNoticeId: row.latest_notice_id || undefined,
       ocid: row.ocid || undefined,
-      title: row.title,
+      title: row.title || null,
       plainEnglishSummary: row.plain_english_summary || '',
-      buyerName: row.buyer_name,
+      buyerName: row.buyer_name || null,
+      buyerId: row.buyer_id || undefined,
       buyerType: 'Public Body',
       valueAmount: row.value_amount ? Number(row.value_amount) : undefined,
-      valueCurrency: row.value_currency || 'GBP',
+      valueCurrency: row.value_currency || null,
       valueDescription: row.value_description || undefined,
       publishedAt: row.published_at || null,
       submissionDeadline: row.submission_deadline || null,
@@ -235,8 +268,8 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
 
   async getAll(): Promise<SourceRecord[]> {
     const { data, error } = await this.client.from('sources').select('*').order('is_active', { ascending: false });
-    if (error || !data) return [];
-    return data.map((r: any) => ({
+    if (error) throw new Error(`Failed to get sources: ${error.message}`);
+    return (data || []).map((r: any) => ({
       id: r.id,
       name: r.name,
       portalType: r.portal_type,
@@ -244,6 +277,7 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       apiEndpoint: r.api_endpoint,
       healthStatus: r.health_status,
       lastSuccessfulScanAt: r.last_successful_scan_at,
+      lastAttemptAt: r.last_attempt_at,
       lastScanError: r.last_scan_error,
       totalNoticesScanned: r.total_notices_scanned,
       totalRelevantFound: r.total_relevant_found,
@@ -254,7 +288,8 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
 
   async getById(id: string): Promise<SourceRecord | null> {
     const { data, error } = await this.client.from('sources').select('*').eq('id', id).maybeSingle();
-    if (error || !data) return null;
+    if (error) throw new Error(`Failed to get source ${id}: ${error.message}`);
+    if (!data) return null;
     return {
       id: data.id,
       name: data.name,
@@ -263,6 +298,7 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       apiEndpoint: data.api_endpoint,
       healthStatus: data.health_status,
       lastSuccessfulScanAt: data.last_successful_scan_at,
+      lastAttemptAt: data.last_attempt_at,
       lastScanError: data.last_scan_error,
       totalNoticesScanned: data.total_notices_scanned,
       totalRelevantFound: data.total_relevant_found,
@@ -281,6 +317,21 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       successful?: boolean;
     }
   ): Promise<void> {
+    // If deltas are present, attempt atomic RPC increment
+    if (stats?.noticesScannedDelta || stats?.relevantFoundDelta) {
+      const { error: rpcErr } = await this.client.rpc('increment_source_counters', {
+        p_source_id: id,
+        p_scanned_delta: stats.noticesScannedDelta || 0,
+        p_relevant_delta: stats.relevantFoundDelta || 0,
+        p_status: status,
+        p_last_scan_error: stats.lastScanError || null,
+        p_successful: Boolean(stats.successful),
+      });
+
+      if (!rpcErr) return;
+      // If RPC is missing, continue to fallback update below
+    }
+
     const now = new Date().toISOString();
     const updatePayload: any = {
       health_status: status,
@@ -292,7 +343,6 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       updatePayload.last_successful_scan_at = now;
       updatePayload.last_scan_error = null;
     } else if (status === 'degraded') {
-      // Degraded retains error reason even if partial success occurred
       if (stats?.lastScanError !== undefined) {
         updatePayload.last_scan_error = stats.lastScanError;
       }
@@ -303,7 +353,10 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       updatePayload.last_scan_error = stats.lastScanError;
     }
 
-    await this.client.from('sources').update(updatePayload).eq('id', id);
+    const { error } = await this.client.from('sources').update(updatePayload).eq('id', id);
+    if (error) {
+      throw new Error(`Failed to update source health: ${error.message}`);
+    }
   }
 
   async recordScanRun(run: Omit<ScanRunRecord, 'id' | 'startedAt'> & { id?: string; startedAt?: string }): Promise<ScanRunRecord> {
@@ -327,7 +380,10 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       error_message: run.errorMessage || null,
     };
 
-    await this.client.from('scan_runs').insert(payload);
+    const { error } = await this.client.from('scan_runs').insert(payload);
+    if (error) {
+      throw new Error(`Failed to record scan run: ${error.message}`);
+    }
     return { ...run, id, startedAt };
   }
 
@@ -345,24 +401,29 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
     const contentHash = crypto.createHash('sha256').update(JSON.stringify(rawJson)).digest('hex');
 
     // Check if an identical unchanged release already exists
-    const { data: existing } = await this.client
+    const { data: existing, error: selectErr } = await this.client
       .from('source_notices')
       .select('id, version, content_hash, tender_id')
       .eq('source_id', sourceId)
       .eq('notice_id', noticeId)
       .order('version', { ascending: false });
 
+    if (selectErr) {
+      throw new Error(`Failed to query source notices: ${selectErr.message}`);
+    }
+
     if (existing && existing.length > 0) {
       const match = existing.find((r) => r.content_hash === contentHash);
       if (match) {
         if (tenderId && !match.tender_id) {
-          await this.client.from('source_notices').update({ tender_id: tenderId }).eq('id', match.id);
+          const { error: updateErr } = await this.client.from('source_notices').update({ tender_id: tenderId }).eq('id', match.id);
+          if (updateErr) throw new Error(`Failed to link notice to tender: ${updateErr.message}`);
         }
         return { id: match.id, version: match.version, isDuplicate: true };
       }
       const nextVersion = Math.max(...existing.map((r) => r.version || 1)) + 1;
       const id = crypto.randomUUID();
-      await this.client.from('source_notices').insert({
+      const { error: insertErr } = await this.client.from('source_notices').insert({
         id,
         source_id: sourceId,
         notice_id: noticeId,
@@ -376,11 +437,12 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
         content_hash: contentHash,
         version: nextVersion,
       });
+      if (insertErr) throw new Error(`Failed to insert source notice version: ${insertErr.message}`);
       return { id, version: nextVersion, isDuplicate: false };
     }
 
     const id = crypto.randomUUID();
-    await this.client.from('source_notices').insert({
+    const { error: insertErr } = await this.client.from('source_notices').insert({
       id,
       source_id: sourceId,
       notice_id: noticeId,
@@ -394,6 +456,7 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       content_hash: contentHash,
       version: 1,
     });
+    if (insertErr) throw new Error(`Failed to insert source notice: ${insertErr.message}`);
     return { id, version: 1, isDuplicate: false };
   }
 
@@ -407,7 +470,7 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
     finalRedirectUrl: string | null,
     notes: string | null
   ): Promise<void> {
-    await this.client.from('tender_source_links').insert({
+    const { error } = await this.client.from('tender_source_links').insert({
       id: crypto.randomUUID(),
       tender_id: tenderId,
       source_id: sourceId,
@@ -418,20 +481,26 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       final_redirect_url: finalRedirectUrl,
       verification_notes: notes,
     });
+    if (error) {
+      throw new Error(`Failed to record source link: ${error.message}`);
+    }
   }
 
   async linkSourceNoticesToTender(sourceId: string, tenderId: string, noticeId: string, ocid?: string): Promise<void> {
-    await this.client
+    const { error: err1 } = await this.client
       .from('source_notices')
       .update({ tender_id: tenderId })
       .eq('source_id', sourceId)
       .eq('notice_id', noticeId);
+    if (err1) throw new Error(`Failed to link source notice to tender: ${err1.message}`);
+
     if (ocid) {
-      await this.client
+      const { error: err2 } = await this.client
         .from('source_notices')
         .update({ tender_id: tenderId })
         .eq('source_id', sourceId)
         .eq('ocid', ocid);
+      if (err2) throw new Error(`Failed to link source notice ocid to tender: ${err2.message}`);
     }
   }
 }
@@ -444,11 +513,12 @@ export class SupabaseBuyersRepository implements IBuyersRepository {
   }
 
   async getOrCreate(name: string, data?: { buyerType?: string; website?: string }): Promise<{ id: string; name: string }> {
-    const { data: existing } = await this.client.from('buyers').select('id, name').eq('name', name).maybeSingle();
+    const { data: existing, error: selectErr } = await this.client.from('buyers').select('id, name').eq('name', name).maybeSingle();
+    if (selectErr) throw new Error(`Failed to lookup buyer: ${selectErr.message}`);
     if (existing) return existing;
 
     const id = crypto.randomUUID();
-    const { data: created, error } = await this.client
+    const { data: created, error: insertErr } = await this.client
       .from('buyers')
       .insert({
         id,
@@ -459,11 +529,41 @@ export class SupabaseBuyersRepository implements IBuyersRepository {
       .select('id, name')
       .single();
 
-    if (error || !created) {
-      return { id, name };
+    if (insertErr || !created) {
+      throw new Error(`Failed to create buyer "${name}": ${insertErr?.message || 'Database insert failed'}`);
     }
     return created;
   }
+}
+
+function mapSupabaseApplicationRow(row: any): TenderApplication {
+  let daysRemaining: number | null = null;
+  if (row.submission_deadline) {
+    const deadline = new Date(row.submission_deadline).getTime();
+    if (!isNaN(deadline)) {
+      daysRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / (1000 * 60 * 60 * 24)));
+    }
+  }
+
+  return {
+    id: row.id,
+    tenderId: row.tender_id,
+    tenderTitle: row.tender_title || 'Untitled Opportunity',
+    canonicalReference: row.canonical_reference || 'REF-TBC',
+    buyerName: row.buyer_name || 'Public Body',
+    submissionDeadline: row.submission_deadline || null,
+    daysRemaining,
+    status: (row.status?.toUpperCase() === 'SUBMITTED' ? 'SUBMITTED' : row.status?.toUpperCase() === 'READY_FOR_REVIEW' ? 'READY_FOR_REVIEW' : 'DRAFT') as ApplicationStatus,
+    bidDecision: 'BID',
+    overallSuitabilityScore: typeof row.overall_suitability_score === 'number' ? row.overall_suitability_score : null,
+    winThemes: Array.isArray(row.win_themes) ? row.win_themes : (typeof row.win_themes === 'string' ? JSON.parse(row.win_themes) : []),
+    questionsCount: typeof row.questions_count === 'number' ? row.questions_count : 0,
+    factsRequiredCount: typeof row.facts_required_count === 'number' ? row.facts_required_count : 0,
+    lastUpdated: row.last_updated || row.updated_at || row.created_at || new Date().toISOString(),
+    questions: Array.isArray(row.questions) ? row.questions : [],
+    factsRequired: [],
+    AIAnalysisStatus: 'NOT_RUN',
+  };
 }
 
 export class SupabaseApplicationsRepository implements IApplicationsRepository {
@@ -473,34 +573,37 @@ export class SupabaseApplicationsRepository implements IApplicationsRepository {
     return client;
   }
 
-  async getAll(): Promise<any[]> {
+  async getAll(): Promise<TenderApplication[]> {
     const { data, error } = await this.client.from('applications').select('*').order('created_at', { ascending: false });
-    if (error || !data) return [];
-    return data;
+    if (error) throw new Error(`Failed to get applications: ${error.message}`);
+    return (data || []).map(mapSupabaseApplicationRow);
   }
 
-  async getById(id: string): Promise<any | null> {
+  async getById(id: string): Promise<TenderApplication | null> {
     const { data, error } = await this.client.from('applications').select('*').eq('id', id).maybeSingle();
-    if (error || !data) return null;
-    return data;
+    if (error) throw new Error(`Failed to get application: ${error.message}`);
+    if (!data) return null;
+    return mapSupabaseApplicationRow(data);
   }
 
-  async getByTenderId(tenderId: string): Promise<any | null> {
+  async getByTenderId(tenderId: string): Promise<TenderApplication | null> {
     const { data, error } = await this.client.from('applications').select('*').eq('tender_id', tenderId).maybeSingle();
-    if (error || !data) return null;
-    return data;
+    if (error) throw new Error(`Failed to get application by tender: ${error.message}`);
+    if (!data) return null;
+    return mapSupabaseApplicationRow(data);
   }
 
-  async createShellForTender(tenderId: string): Promise<any> {
+  async createShellForTender(tenderId: string): Promise<TenderApplication> {
     return this.createFromTender(tenderId);
   }
 
-  async createFromTender(tenderId: string): Promise<any> {
-    const { data: tender } = await this.client.from('tenders').select('*').eq('id', tenderId).single();
-    if (!tender) throw new Error(`Tender ${tenderId} not found`);
+  async createFromTender(tenderId: string): Promise<TenderApplication> {
+    const { data: tender, error: tenderErr } = await this.client.from('tenders').select('*').eq('id', tenderId).single();
+    if (tenderErr || !tender) throw new Error(`Tender ${tenderId} not found: ${tenderErr?.message || 'Missing tender record'}`);
 
-    const { data: existing } = await this.client.from('applications').select('*').eq('tender_id', tenderId).maybeSingle();
-    if (existing) return existing;
+    const { data: existing, error: existErr } = await this.client.from('applications').select('*').eq('tender_id', tenderId).maybeSingle();
+    if (existErr) throw new Error(`Failed to check existing application: ${existErr.message}`);
+    if (existing) return mapSupabaseApplicationRow(existing);
 
     const id = crypto.randomUUID();
     const payload = {
@@ -512,15 +615,15 @@ export class SupabaseApplicationsRepository implements IApplicationsRepository {
       submission_deadline: tender.submission_deadline || null,
       status: 'DRAFT',
       bid_decision: 'BID',
-      overall_suitability_score: 88,
-      win_themes: ['Agile Motion Delivery', 'Verified Brand Compliance'],
+      overall_suitability_score: null,
+      win_themes: [],
       questions_count: 0,
       facts_required_count: 0,
       questions: [],
     };
 
     const { data: created, error } = await this.client.from('applications').insert(payload).select().single();
-    if (error) throw error;
-    return created;
+    if (error || !created) throw new Error(`Failed to create application shell: ${error?.message || 'Insert returned null'}`);
+    return mapSupabaseApplicationRow(created);
   }
 }

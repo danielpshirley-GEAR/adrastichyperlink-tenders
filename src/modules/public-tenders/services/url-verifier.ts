@@ -5,8 +5,8 @@ export interface VerificationOptions {
   expectedNoticeId?: string;
   expectedReference?: string;
   expectedOcid?: string;
-  expectedTitle?: string;
-  expectedBuyer?: string;
+  expectedTitle?: string | null;
+  expectedBuyer?: string | null;
   expectedDeadline?: string | null;
 }
 

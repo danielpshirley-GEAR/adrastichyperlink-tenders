@@ -24,10 +24,12 @@ export interface TenderApplication {
   daysRemaining?: number | null;
   status: ApplicationStatus;
   bidDecision: "BID";
-  overallSuitabilityScore: number;
+  overallSuitabilityScore: number | null;
   winThemes: string[];
   questionsCount: number;
   factsRequiredCount: number;
   lastUpdated: string;
   questions: ApplicationQuestion[];
+  factsRequired?: string[];
+  AIAnalysisStatus?: 'NOT_RUN' | 'RUNNING' | 'COMPLETED' | 'FAILED';
 }

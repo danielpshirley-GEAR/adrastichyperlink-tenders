@@ -134,9 +134,11 @@ export async function POST(req: Request) {
         }
 
         // 4. Record buyer
-        const buyer = await buyersRepo.getOrCreate(candidate.buyerName, {
-          buyerType: candidate.buyerType,
-        });
+        const buyer = candidate.buyerName
+          ? await buyersRepo.getOrCreate(candidate.buyerName, {
+              buyerType: candidate.buyerType,
+            })
+          : null;
 
         // 5. Live URL verification with strict Grade A criteria
         const verification = await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
@@ -169,12 +171,12 @@ export async function POST(req: Request) {
           ocid: candidate.ocid,
           title: candidate.title,
           plainEnglishSummary: classification.final.reason || candidate.description?.slice(0, 300),
-          buyerName: buyer.name,
-          buyerId: buyer.id,
+          buyerName: buyer?.name || candidate.buyerName || null,
+          buyerId: buyer?.id || null,
           valueAmount: candidate.valueAmount,
-          valueCurrency: candidate.valueCurrency || 'GBP',
+          valueCurrency: candidate.valueCurrency || null,
           valueDescription: candidate.valueAmount
-            ? `£${candidate.valueAmount.toLocaleString()} ${candidate.valueCurrency || 'GBP'}`
+            ? `£${candidate.valueAmount.toLocaleString()} ${candidate.valueCurrency || ''}`.trim()
             : undefined,
           publishedAt: candidate.publishedAt || null,
           submissionDeadline: candidate.submissionDeadline || null,
@@ -264,10 +266,23 @@ export async function POST(req: Request) {
     });
 
     const isTruncated = Boolean(scanResult.truncatedBySafetyLimit);
+    let finalScanStatus: 'COMPLETED' | 'PARTIAL' | 'DEGRADED' | 'FAILED' = 'COMPLETED';
+    let statusMessage = 'Scan Completed Successfully';
+
+    if (healthStatus === 'error' || processingErrors > 0) {
+      finalScanStatus = 'FAILED';
+      statusMessage = errorMessage || 'Scan Failed — Errors encountered during ingestion';
+    } else if (healthStatus === 'degraded' || urlVerificationFailures > 0) {
+      finalScanStatus = 'DEGRADED';
+      statusMessage = errorMessage || 'Scan Degraded — Warnings or verification problems encountered';
+    } else if (isTruncated) {
+      finalScanStatus = 'PARTIAL';
+      statusMessage = 'SCAN PARTIAL — SAFETY LIMIT REACHED';
+    }
 
     return NextResponse.json({
-      status: 'completed',
-      message: isTruncated ? 'SCAN PARTIAL — SAFETY LIMIT REACHED' : 'Scan Completed Successfully',
+      status: finalScanStatus,
+      message: statusMessage,
       scanType,
       source: 'Find a Tender (FTS)',
       sourceHealth: healthStatus,

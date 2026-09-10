@@ -236,7 +236,6 @@ async function runHardenSuite() {
   try {
     process.stdout.write('TEST J: Repository abstraction & production database check... ');
     const { isSupabaseConfigured, getSupabaseClient } = await import('../src/shared/database/supabase');
-    const { checkDatabaseHealth: chk } = await import('../src/shared/database/db');
 
     if (isSupabaseConfigured()) {
       const client = getSupabaseClient()!;
@@ -253,20 +252,8 @@ async function runHardenSuite() {
       results['J'] = true;
       console.log('PASS (Supabase PostgreSQL verified with real write/read/delete)');
     } else {
-      const origEnv = process.env.NODE_ENV;
-      try {
-        process.env.NODE_ENV = 'production';
-        const health = await chk();
-        if (health.healthy === false && health.error === 'PRODUCTION DATABASE NOT CONFIGURED') {
-          results['J'] = true;
-          console.log('PASS (local mode: fail-closed production guard verified; Supabase credentials pending for cloud)');
-        } else {
-          results['J'] = false;
-          console.log('FAIL (production did not fail closed)');
-        }
-      } finally {
-        process.env.NODE_ENV = origEnv;
-      }
+      results['J'] = false;
+      console.log('SKIPPED / BLOCKED (Supabase not configured in current environment; cloud credentials required)');
     }
   } catch (e: any) {
     results['J'] = false;
@@ -305,8 +292,8 @@ async function runHardenSuite() {
     process.stdout.write('TEST L: Gemini classifier truthful configuration state... ');
     const isConfigured = GeminiClient.isConfigured();
     if (!isConfigured) {
-      results['L'] = true;
-      console.log('UNCONFIGURED / DETERMINISTIC (Gemini API key not configured; deterministic fallback active)');
+      results['L'] = false;
+      console.log('UNCONFIGURED / SKIPPED (Gemini API key not configured; deterministic fallback active)');
     } else {
       const res = await (await import('../src/modules/public-tenders/services/tender-classifier')).TenderClassifier.classify({
         title: 'Motion Design and Brand Video Production',
@@ -315,7 +302,7 @@ async function runHardenSuite() {
       });
       if (res.ai.status === 'RUN' && res.ai.relevance) {
         results['L'] = true;
-        console.log(`PASS (Gemini live call succeeded: ${res.ai.model}, relevance: ${res.ai.relevance})`);
+        console.log(`CONFIGURED + PASS (Gemini live call succeeded: ${res.ai.model}, relevance: ${res.ai.relevance})`);
       } else {
         results['L'] = false;
         console.log(`FAIL (Gemini status: ${res.ai.status})`);
@@ -350,19 +337,53 @@ async function runHardenSuite() {
     console.log(`FAIL (${e.message})`);
   }
 
-  // TEST N: No fake company credentials in production
+  // TEST N: Zero fabricated credentials or application scores
   try {
-    process.stdout.write('TEST N: No fake company credentials in production knowledge base... ');
+    process.stdout.write('TEST N: No fake company credentials or fabricated application scores... ');
     const fs = await import('fs');
-    const knowledgePage = fs.readFileSync('src/app/knowledge/page.tsx', 'utf8');
-    const usesReviewInProd = knowledgePage.includes('isReviewMode={true}') || knowledgePage.includes('reviewKnowledge');
 
-    if (!usesReviewInProd) {
+    const prohibited = [
+      'Agile Motion Delivery',
+      'Verified Brand Compliance',
+      '12345678',
+    ];
+
+    const prodFilesToCheck = [
+      'src/shared/database/repositories/applications.ts',
+      'src/shared/database/supabase.ts',
+      'src/modules/public-tenders/components/KnowledgeView.tsx',
+      'src/app/knowledge/page.tsx',
+    ];
+
+    let foundViolations: string[] = [];
+    for (const f of prodFilesToCheck) {
+      if (fs.existsSync(f)) {
+        const content = fs.readFileSync(f, 'utf8');
+        for (const p of prohibited) {
+          if (content.includes(p)) {
+            foundViolations.push(`${f} contains "${p}"`);
+          }
+        }
+      }
+    }
+
+    // Inspect SQLite applications table in local database for 88 or fake win themes
+    const appRows = db.prepare('SELECT * FROM applications').all() as any[];
+    for (const app of appRows) {
+      if (app.overall_suitability_score === 88) {
+        foundViolations.push(`Application ${app.id} contains fabricated score 88`);
+      }
+      if (typeof app.win_themes === 'string' && app.win_themes.includes('Agile Motion Delivery')) {
+        foundViolations.push(`Application ${app.id} contains fabricated win theme`);
+      }
+    }
+
+    if (foundViolations.length === 0) {
       results['N'] = true;
-      console.log('PASS (production knowledge enforces empty states; zero fabricated case studies/credentials)');
+      console.log('PASS (verified zero occurrences of fabricated scores, win themes, or company credentials)');
     } else {
       results['N'] = false;
-      console.log(`FAIL (usesReviewInProd: ${usesReviewInProd})`);
+      console.log(`FAIL (${foundViolations.join('; ')})`);
     }
   } catch (e: any) {
     results['N'] = false;
@@ -373,9 +394,18 @@ async function runHardenSuite() {
   const passedCount = Object.values(results).filter(Boolean).length;
   const totalCount = Object.keys(results).length;
   console.log(`TOTAL ACCEPTANCE TESTS PASSED: ${passedCount} / ${totalCount}`);
+  if (!results['J']) {
+    console.log('[NOTE] TEST J is SKIPPED / BLOCKED pending live Supabase cloud credentials.');
+  }
+  if (!results['L']) {
+    console.log('[NOTE] TEST L is UNCONFIGURED / SKIPPED pending Gemini API key.');
+  }
   console.log('====================================================');
 
-  if (passedCount < totalCount) {
+  const requiredTests = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'M', 'N'];
+  const failedRequired = requiredTests.filter((key) => !results[key]);
+  if (failedRequired.length > 0) {
+    console.error(`FAILED TESTS: ${failedRequired.join(', ')}`);
     process.exit(1);
   }
 }

@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && python3 scripts/assemble_pages.py && python3 scripts/export_review.py",
+    "build": "next build",
+    "build:review": "next build && python3 scripts/assemble_pages.py && python3 scripts/export_review.py",
     "export:review": "python3 scripts/export_review.py",
     "screenshots": "python3 scripts/capture_screenshots.py",
-    "deploy:review": "npm run build && npx wrangler pages deploy out --project-name adrastichyperlink-tenders --branch main",
+    "deploy:review": "npm run build:review && npx wrangler pages deploy out --project-name adrastichyperlink-tenders --branch main",
     "start": "next start",
     "lint": "next lint",
-    "test": "npx tsx scripts/test_unit.ts"
+    "test": "tsx scripts/test_unit.ts"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
@@ -32,6 +33,7 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.4"
   }
 }

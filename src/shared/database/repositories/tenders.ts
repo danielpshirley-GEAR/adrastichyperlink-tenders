@@ -141,13 +141,14 @@ export class TendersRepository {
     const id = existing?.id || tender.id || randomUUID();
     const now = new Date().toISOString();
 
+    const latestNoticeId = (tender as any).latestNoticeId || tender.canonicalReference;
     const ocid = tender.ocid || existing?.ocid || null;
-    const title = tender.title || existing?.title || '';
+    const title = tender.title !== undefined ? tender.title : (existing?.title ?? null);
     const plainEnglishSummary = tender.plainEnglishSummary ?? existing?.plain_english_summary ?? null;
     const buyerId = (tender as any).buyerId || existing?.buyer_id || null;
-    const buyerName = tender.buyerName || existing?.buyer_name || 'Unknown Buyer';
+    const buyerName = tender.buyerName !== undefined ? tender.buyerName : (existing?.buyer_name ?? null);
     const valueAmount = tender.valueAmount !== undefined ? tender.valueAmount : (existing?.value_amount ?? null);
-    const valueCurrency = tender.valueCurrency || existing?.value_currency || 'GBP';
+    const valueCurrency = tender.valueCurrency || existing?.value_currency || null;
     const valueDescription = tender.valueDescription || existing?.value_description || null;
 
     // Strict null policy: NEVER fallback to now
@@ -184,7 +185,7 @@ export class TendersRepository {
     if (existing) {
       db.prepare(`
         UPDATE tenders SET
-          ocid = ?, title = ?, plain_english_summary = ?, buyer_id = ?, buyer_name = ?,
+          latest_notice_id = ?, ocid = ?, title = ?, plain_english_summary = ?, buyer_id = ?, buyer_name = ?,
           value_amount = ?, value_currency = ?, value_description = ?, published_at = ?,
           submission_deadline = ?, clarification_deadline = ?, contract_start_at = ?, contract_end_at = ?,
           last_verified_at = ?, qualification = ?, deterministic_result = ?, ai_result = ?,
@@ -193,7 +194,7 @@ export class TendersRepository {
           evaluation_criteria = ?, requirements = ?, documents = ?, updated_at = ?
         WHERE id = ?
       `).run(
-        ocid, title, plainEnglishSummary, buyerId, buyerName,
+        latestNoticeId, ocid, title, plainEnglishSummary, buyerId, buyerName,
         valueAmount, valueCurrency, valueDescription, publishedAt,
         submissionDeadline, clarificationDeadline, contractStartAt, contractEndAt,
         now, qualification, deterministicResult, aiResult,
@@ -205,7 +206,7 @@ export class TendersRepository {
     } else {
       db.prepare(`
         INSERT INTO tenders (
-          id, canonical_reference, ocid, title, plain_english_summary,
+          id, canonical_reference, latest_notice_id, ocid, title, plain_english_summary,
           buyer_id, buyer_name, value_amount, value_currency, value_description,
           published_at, submission_deadline, clarification_deadline,
           contract_start_at, contract_end_at, discovered_at, last_verified_at,
@@ -214,7 +215,7 @@ export class TendersRepository {
           service_tags, is_archived, bid_decision_state, evaluation_criteria,
           requirements, documents, created_at, updated_at
         ) VALUES (
-          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?, ?,
@@ -224,7 +225,7 @@ export class TendersRepository {
           ?, ?, ?, ?
         )
       `).run(
-        id, tender.canonicalReference, ocid, title, plainEnglishSummary,
+        id, tender.canonicalReference, latestNoticeId, ocid, title, plainEnglishSummary,
         buyerId, buyerName, valueAmount, valueCurrency, valueDescription,
         publishedAt, submissionDeadline, clarificationDeadline,
         contractStartAt, contractEndAt, now, now,
@@ -321,13 +322,15 @@ function mapRowToTender(row: any): TenderSummary {
   return {
     id: row.id,
     canonicalReference: row.canonical_reference,
+    latestNoticeId: row.latest_notice_id || undefined,
     ocid: row.ocid || undefined,
-    title: row.title,
+    title: row.title || null,
     plainEnglishSummary: row.plain_english_summary || '',
-    buyerName: row.buyer_name,
+    buyerName: row.buyer_name || null,
+    buyerId: row.buyer_id || undefined,
     buyerType: 'Public Body',
-    valueAmount: row.value_amount !== null ? Number(row.value_amount) : undefined,
-    valueCurrency: row.value_currency || 'GBP',
+    valueAmount: row.value_amount !== null && row.value_amount !== undefined ? Number(row.value_amount) : undefined,
+    valueCurrency: row.value_currency || null,
     valueDescription: row.value_description || undefined,
     publishedAt: row.published_at || null,
     submissionDeadline: row.submission_deadline || null,

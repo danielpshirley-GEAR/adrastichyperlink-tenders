@@ -18,24 +18,23 @@ import Database from 'better-sqlite3';
 export interface DbConfig {
   databaseUrl?: string;
   supabaseUrl?: string;
-  supabaseKey?: string;
+  supabaseServiceRoleKey?: string;
 }
 
 export const getDbConfig = (): DbConfig => {
   return {
-    databaseUrl: process.env.DATABASE_URL,
     supabaseUrl: process.env.SUPABASE_URL,
-    supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY,
+    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   };
 };
 
 /**
  * Genuinely determines if a production database (Supabase/PostgreSQL) is configured.
- * STRICT: Absolutely NO hardcoded '|| true'.
+ * STRICT: Absolutely NO hardcoded '|| true'. Requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.
  */
 export const isProductionDatabaseConfigured = (): boolean => {
   const config = getDbConfig();
-  return Boolean(config.databaseUrl || (config.supabaseUrl && config.supabaseKey));
+  return Boolean(config.supabaseUrl && config.supabaseServiceRoleKey);
 };
 
 export interface DatabaseHealth {
@@ -49,11 +48,11 @@ export interface DatabaseHealth {
 
 /**
  * Genuinely tests whether the active database connection is operational
- * by executing a real read/write probe.
+ * by executing a real read/write/delete probe against db_health_probes.
  * NEVER returns healthy through hardcoded truth.
  */
 export async function checkDatabaseHealth(): Promise<DatabaseHealth> {
-  // If Supabase / Postgres is configured, probe it
+  // If Supabase / Postgres is configured, probe it with write/read/delete
   if (isSupabaseConfigured()) {
     try {
       const client = getSupabaseClient();
@@ -61,7 +60,39 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealth> {
         throw new Error('Supabase client failed to initialize');
       }
 
-      // Real read probe
+      // 1. INSERT probe
+      const probeId = `probe_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const probeTime = new Date().toISOString();
+      const { error: insertErr } = await client
+        .from('db_health_probes')
+        .insert({ id: probeId, probed_at: probeTime });
+
+      if (insertErr) {
+        throw new Error(`Write probe failed: ${insertErr.message}`);
+      }
+
+      // 2. SELECT probe
+      const { data: readData, error: selectErr } = await client
+        .from('db_health_probes')
+        .select('*')
+        .eq('id', probeId)
+        .maybeSingle();
+
+      if (selectErr || !readData) {
+        throw new Error(`Read probe failed: ${selectErr?.message || 'probe record missing'}`);
+      }
+
+      // 3. DELETE probe
+      const { error: deleteErr } = await client
+        .from('db_health_probes')
+        .delete()
+        .eq('id', probeId);
+
+      if (deleteErr) {
+        throw new Error(`Delete probe failed: ${deleteErr.message}`);
+      }
+
+      // 4. Genuine counts
       const { count: sourcesCount, error: sourceErr } = await client
         .from('sources')
         .select('*', { count: 'exact', head: true });

@@ -74,13 +74,13 @@ const NEGATIVE_EXCLUSIONS = [
 
 export class DeterministicFilter {
   static evaluate(candidate: {
-    title: string;
+    title?: string | null;
     description?: string;
     cpvCodes?: string[];
     submissionDeadline?: string;
     noticeType?: string;
   }): FilterResult {
-    const textToScan = `${candidate.title} ${candidate.description || ''}`.toLowerCase();
+    const textToScan = `${candidate.title || ''} ${candidate.description || ''}`.toLowerCase();
 
     // 1. Negative Exclusions Check
     for (const neg of NEGATIVE_EXCLUSIONS) {

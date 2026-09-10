@@ -4,12 +4,20 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/:path*',
+        // Public review endpoints allow cross-origin auditing
+        source: '/review/:path*',
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },
-          { key: 'Access-Control-Allow-Methods', value: 'GET, POST, OPTIONS' },
-          { key: 'Access-Control-Allow-Headers', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
           { key: 'X-Robots-Tag', value: 'index, follow, all' },
+        ],
+      },
+      {
+        // Review manifest
+        source: '/review-export/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
         ],
       },
     ];

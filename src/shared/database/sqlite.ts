@@ -85,13 +85,14 @@ function initializeTables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS tenders (
       id TEXT PRIMARY KEY,
       canonical_reference TEXT UNIQUE NOT NULL,
+      latest_notice_id TEXT,
       ocid TEXT,
-      title TEXT NOT NULL,
+      title TEXT,
       plain_english_summary TEXT,
       buyer_id TEXT REFERENCES buyers(id),
-      buyer_name TEXT NOT NULL,
+      buyer_name TEXT,
       value_amount REAL,
-      value_currency TEXT DEFAULT 'GBP',
+      value_currency TEXT,
       value_description TEXT,
       published_at TEXT,
       submission_deadline TEXT,
@@ -165,7 +166,6 @@ function initializeTables(db: Database.Database): void {
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_source_notices_unique_release ON source_notices (source_id, notice_id, content_hash);
     CREATE INDEX IF NOT EXISTS idx_source_notices_ocid ON source_notices (ocid);
-    CREATE INDEX IF NOT EXISTS idx_source_notices_tender_id ON source_notices (tender_id);
     CREATE INDEX IF NOT EXISTS idx_tenders_ocid ON tenders (ocid);
     CREATE INDEX IF NOT EXISTS idx_tenders_canonical_ref ON tenders (canonical_reference);
 
@@ -238,9 +238,20 @@ function runMigrations(db: Database.Database): void {
     { table: 'tenders', column: 'ai_result', type: 'TEXT' },
     { table: 'tenders', column: 'final_qualification', type: 'TEXT' },
     { table: 'tenders', column: 'lifecycle_status', type: "TEXT DEFAULT 'ACTIVE'" },
+    { table: 'tenders', column: 'latest_notice_id', type: 'TEXT' },
     { table: 'source_notices', column: 'ocid', type: 'TEXT' },
     { table: 'source_notices', column: 'content_hash', type: 'TEXT' },
     { table: 'source_notices', column: 'version', type: 'INTEGER DEFAULT 1' },
+    { table: 'applications', column: 'tender_title', type: 'TEXT' },
+    { table: 'applications', column: 'canonical_reference', type: 'TEXT' },
+    { table: 'applications', column: 'buyer_name', type: 'TEXT' },
+    { table: 'applications', column: 'bid_decision', type: "TEXT DEFAULT 'BID'" },
+    { table: 'applications', column: 'overall_suitability_score', type: 'INTEGER' },
+    { table: 'applications', column: 'win_themes', type: "TEXT DEFAULT '[]'" },
+    { table: 'applications', column: 'questions_count', type: 'INTEGER DEFAULT 0' },
+    { table: 'applications', column: 'facts_required_count', type: 'INTEGER DEFAULT 0' },
+    { table: 'applications', column: 'questions', type: "TEXT DEFAULT '[]'" },
+    { table: 'applications', column: 'last_updated', type: 'TEXT' },
   ];
 
   for (const { table, column, type } of columnsToAdd) {
@@ -255,23 +266,25 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
-  // Migrate tenders table to permit NULL in published_at and submission_deadline
+  // Migrate tenders table to permit NULL in published_at, submission_deadline, and buyer_name
   try {
     const tendersInfo = db.prepare('PRAGMA table_info(tenders)').all() as any[];
     const publishedAtCol = tendersInfo.find((col) => col.name === 'published_at');
-    if (publishedAtCol && publishedAtCol.notnull === 1) {
+    const buyerNameCol = tendersInfo.find((col) => col.name === 'buyer_name');
+    if ((publishedAtCol && publishedAtCol.notnull === 1) || (buyerNameCol && buyerNameCol.notnull === 1)) {
       db.pragma('foreign_keys = OFF');
       db.exec(`
         CREATE TABLE tenders_v2 (
           id TEXT PRIMARY KEY,
           canonical_reference TEXT UNIQUE NOT NULL,
+          latest_notice_id TEXT,
           ocid TEXT,
-          title TEXT NOT NULL,
+          title TEXT,
           plain_english_summary TEXT,
           buyer_id TEXT REFERENCES buyers(id),
-          buyer_name TEXT NOT NULL,
+          buyer_name TEXT,
           value_amount REAL,
-          value_currency TEXT DEFAULT 'GBP',
+          value_currency TEXT,
           value_description TEXT,
           published_at TEXT,
           submission_deadline TEXT,
@@ -299,7 +312,7 @@ function runMigrations(db: Database.Database): void {
         );
 
         INSERT INTO tenders_v2 (
-          id, canonical_reference, ocid, title, plain_english_summary,
+          id, canonical_reference, latest_notice_id, ocid, title, plain_english_summary,
           buyer_id, buyer_name, value_amount, value_currency, value_description,
           published_at, submission_deadline, clarification_deadline,
           contract_start_at, contract_end_at, discovered_at, last_verified_at,
@@ -308,7 +321,7 @@ function runMigrations(db: Database.Database): void {
           service_tags, is_archived, bid_decision_state, evaluation_criteria,
           requirements, documents, created_at, updated_at
         ) SELECT
-          id, canonical_reference, ocid, title, plain_english_summary,
+          id, canonical_reference, COALESCE(latest_notice_id, canonical_reference), ocid, title, plain_english_summary,
           buyer_id, buyer_name, value_amount, value_currency, value_description,
           published_at, submission_deadline, clarification_deadline,
           contract_start_at, contract_end_at, discovered_at, last_verified_at,
@@ -324,14 +337,64 @@ function runMigrations(db: Database.Database): void {
       db.pragma('foreign_keys = ON');
     }
   } catch (err: any) {
-    console.error('Failed to migrate tenders table to nullable dates:', err.message);
+    console.error('Failed to migrate tenders table to nullable columns:', err.message);
+  }
+
+  // Migrate applications table to permit NULL in submission_deadline if legacy notnull constraint exists
+  try {
+    const appsInfo = db.prepare('PRAGMA table_info(applications)').all() as any[];
+    const deadlineCol = appsInfo.find((col) => col.name === 'submission_deadline');
+    if (deadlineCol && deadlineCol.notnull === 1) {
+      db.pragma('foreign_keys = OFF');
+      db.exec(`
+        CREATE TABLE applications_v2 (
+          id TEXT PRIMARY KEY,
+          tender_id TEXT NOT NULL UNIQUE REFERENCES tenders(id) ON DELETE CASCADE,
+          tender_title TEXT NOT NULL,
+          canonical_reference TEXT NOT NULL,
+          buyer_name TEXT NOT NULL,
+          submission_deadline TEXT,
+          status TEXT NOT NULL DEFAULT 'DRAFT',
+          bid_decision TEXT NOT NULL DEFAULT 'BID',
+          overall_suitability_score INTEGER,
+          win_themes TEXT DEFAULT '[]',
+          questions_count INTEGER NOT NULL DEFAULT 0,
+          facts_required_count INTEGER NOT NULL DEFAULT 0,
+          questions TEXT DEFAULT '[]',
+          last_updated TEXT NOT NULL DEFAULT (datetime('now')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        INSERT INTO applications_v2 (
+          id, tender_id, tender_title, canonical_reference, buyer_name,
+          submission_deadline, status, bid_decision, overall_suitability_score,
+          win_themes, questions_count, facts_required_count, questions,
+          last_updated, created_at
+        ) SELECT
+          id, tender_id, COALESCE(tender_title, 'Untitled Opportunity'), COALESCE(canonical_reference, 'REF-TBC'),
+          COALESCE(buyer_name, 'Public Body'), submission_deadline, status,
+          COALESCE(bid_decision, 'BID'), overall_suitability_score,
+          COALESCE(win_themes, '[]'), COALESCE(questions_count, 0),
+          COALESCE(facts_required_count, 0), COALESCE(questions, '[]'),
+          COALESCE(last_updated, datetime('now')), COALESCE(created_at, datetime('now'))
+        FROM applications;
+
+        DROP TABLE applications;
+        ALTER TABLE applications_v2 RENAME TO applications;
+      `);
+      db.pragma('foreign_keys = ON');
+    }
+  } catch {
+    // Ignore migration error
   }
 
   // Create indexes after ensuring columns exist
   try {
     db.exec(`
       CREATE INDEX IF NOT EXISTS idx_tenders_canonical ON tenders(canonical_reference);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tenders_ocid_unique ON tenders(ocid);
       CREATE INDEX IF NOT EXISTS idx_tenders_ocid ON tenders(ocid);
+      CREATE INDEX IF NOT EXISTS idx_tenders_latest_notice_id ON tenders(latest_notice_id);
       CREATE INDEX IF NOT EXISTS idx_source_notices_lookup ON source_notices(source_id, notice_id);
       CREATE INDEX IF NOT EXISTS idx_source_notices_hash ON source_notices(source_id, notice_id, content_hash);
       CREATE INDEX IF NOT EXISTS idx_source_notices_tender ON source_notices(tender_id);

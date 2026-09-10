@@ -37,14 +37,15 @@ export type ServiceTaxonomy =
 export interface TenderSummary {
   id: string;
   canonicalReference: string;
+  latestNoticeId?: string;
   ocid?: string;
-  title: string;
-  plainEnglishSummary: string;
-  buyerName: string;
-  buyerId?: string;
-  buyerType: string;
+  title: string | null;
+  plainEnglishSummary: string | null;
+  buyerName: string | null;
+  buyerId?: string | null;
+  buyerType?: string;
   valueAmount?: number;
-  valueCurrency: string;
+  valueCurrency?: string | null;
   valueDescription?: string;
   publishedAt?: string | null;
   submissionDeadline?: string | null;

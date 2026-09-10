@@ -63,13 +63,14 @@ CREATE TABLE IF NOT EXISTS buyers (
 CREATE TABLE IF NOT EXISTS tenders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     canonical_reference VARCHAR(128) UNIQUE NOT NULL,
+    latest_notice_id VARCHAR(128),
     ocid VARCHAR(128),
-    title TEXT NOT NULL,
+    title TEXT,
     plain_english_summary TEXT,
     buyer_id UUID REFERENCES buyers(id),
-    buyer_name VARCHAR(255) NOT NULL,
+    buyer_name VARCHAR(255),
     value_amount NUMERIC(14, 2),
-    value_currency VARCHAR(8) DEFAULT 'GBP',
+    value_currency VARCHAR(8),
     value_description TEXT,
     published_at TIMESTAMPTZ,
     submission_deadline TIMESTAMPTZ,
@@ -183,7 +184,9 @@ CREATE INDEX IF NOT EXISTS idx_source_notices_ocid ON source_notices (ocid);
 CREATE INDEX IF NOT EXISTS idx_source_notices_tender_id ON source_notices (tender_id);
 CREATE INDEX IF NOT EXISTS idx_source_notices_lookup ON source_notices (source_id, notice_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenders_ocid_unique ON tenders (ocid) WHERE ocid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tenders_ocid ON tenders (ocid);
+CREATE INDEX IF NOT EXISTS idx_tenders_latest_notice_id ON tenders (latest_notice_id);
 CREATE INDEX IF NOT EXISTS idx_tenders_canonical_ref ON tenders (canonical_reference);
 CREATE INDEX IF NOT EXISTS idx_tenders_qualification ON tenders (qualification);
 CREATE INDEX IF NOT EXISTS idx_tenders_bid_decision_state ON tenders (bid_decision_state);

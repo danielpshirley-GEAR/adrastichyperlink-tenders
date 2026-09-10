@@ -36,8 +36,8 @@ export interface ClassificationResult {
 export type TenderClassification = ClassificationResult;
 
 export interface ClassifierInput {
-  title: string;
-  buyer: string;
+  title?: string | null;
+  buyer?: string | null;
   description: string;
   cpvCodes?: string[];
   noticeType?: string;

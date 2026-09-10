@@ -305,7 +305,7 @@ export default function ReviewContentPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
             <div className="p-3 bg-gallery-canvas border border-gallery-border rounded">
               <strong className="block text-gallery-charcoal">Verified Commercial Credentials</strong>
-              <span>Hiscox Professional Indemnity (£2,000,000) • Hiscox Public Liability (£5,000,000)</span>
+              <span>Professional Indemnity (Policy TBC) • Public Liability (Policy TBC)</span>
             </div>
             <div className="p-3 bg-gallery-canvas border border-gallery-border rounded">
               <strong className="block text-gallery-charcoal">Work Classification Boundaries</strong>

@@ -263,26 +263,23 @@ export class FindATenderConnector implements ProcurementConnector {
 
     const noticeId = String(r.id);
     const tender = r.tender || {};
-    const title = tender.title || r.description?.slice(0, 100) || `Procurement Notice ${noticeId}`;
+    const title = tender.title || r.description?.slice(0, 100) || null;
     const description = tender.description || r.description || '';
 
     // Extract Buyer
-    let buyerName = r.buyer?.name;
+    let buyerName: string | null = r.buyer?.name || null;
     let buyerType = 'Public Body';
     if (!buyerName && Array.isArray(r.parties)) {
       const buyerParty = r.parties.find((p: any) => Array.isArray(p.roles) && p.roles.includes('buyer'));
       if (buyerParty) {
-        buyerName = buyerParty.name || buyerParty.identifier?.legalName;
+        buyerName = buyerParty.name || buyerParty.identifier?.legalName || null;
         buyerType = buyerParty.details?.classifications?.[0]?.description || 'Public Body';
       }
-    }
-    if (!buyerName) {
-      buyerName = 'Unknown Buyer';
     }
 
     // Extract Value
     const valueAmount = typeof tender.value?.amount === 'number' ? tender.value.amount : undefined;
-    const valueCurrency = tender.value?.currency || 'GBP';
+    const valueCurrency = tender.value?.currency || null;
 
     // Extract Dates — STRICTLY NULL IF MISSING (NEVER INVENT DATES)
     const publishedAt = r.date ? String(r.date) : null;

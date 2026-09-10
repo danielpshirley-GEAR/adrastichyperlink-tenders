@@ -102,7 +102,7 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
               <>
                 <h3 className="text-sm font-bold text-gallery-charcoal">Adrastichyperlink Limited</h3>
                 <p className="text-xs text-gallery-muted">
-                  Specialist creative studio & motion direction partner. Company No: 12345678 (England & Wales).
+                  Specialist creative studio & motion direction partner. Registration details pending formal confirmation.
                 </p>
               </>
             ) : (
@@ -137,7 +137,7 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
               <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
                 <div className="space-y-1">
                   <div className="text-xs font-bold text-gallery-charcoal">Professional Indemnity Insurance</div>
-                  <div className="text-[11px] text-gallery-muted">Hiscox Policy — £2,000,000 aggregate cover</div>
+                  <div className="text-[11px] text-gallery-muted">Policy documentation pending upload</div>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
                   REVIEW FIXTURE
@@ -147,7 +147,7 @@ export function KnowledgeView({ basePath = '', isReviewMode = false }: Knowledge
               <article className="p-4 bg-gallery-surface border border-gallery-border rounded-lg flex items-center justify-between shadow-2xs">
                 <div className="space-y-1">
                   <div className="text-xs font-bold text-gallery-charcoal">Public Liability Insurance</div>
-                  <div className="text-[11px] text-gallery-muted">Hiscox Policy — £5,000,000 cover</div>
+                  <div className="text-[11px] text-gallery-muted">Policy documentation pending upload</div>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
                   REVIEW FIXTURE
