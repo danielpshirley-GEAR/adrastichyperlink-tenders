@@ -4,9 +4,10 @@ import { VerificationGrade, VerificationResult } from '../connectors/types';
 export interface VerificationOptions {
   expectedNoticeId?: string;
   expectedReference?: string;
+  expectedOcid?: string;
   expectedTitle?: string;
   expectedBuyer?: string;
-  expectedDeadline?: string;
+  expectedDeadline?: string | null;
 }
 
 export class UrlVerifier {
@@ -39,7 +40,7 @@ export class UrlVerifier {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -55,7 +56,7 @@ export class UrlVerifier {
       clearTimeout(timeoutId);
 
       const httpStatus = response.status;
-      const finalRedirectUrl = response.url;
+      const finalRedirectUrl = response.url || url;
 
       if (!response.ok) {
         return {
@@ -79,7 +80,8 @@ export class UrlVerifier {
       const isNotFoundPage =
         lowerHtml.includes('page not found') ||
         lowerHtml.includes('there is a problem with the service') ||
-        lowerHtml.includes('notice has been withdrawn');
+        lowerHtml.includes('notice has been withdrawn') ||
+        lowerHtml.includes('this notice cannot be found');
 
       if (isNotFoundPage) {
         return {
@@ -91,24 +93,43 @@ export class UrlVerifier {
           buyerMatches: false,
           datesMatch: false,
           routeCorrect: false,
-          notes: 'Notice was withdrawn or page reported not found.',
+          notes: 'Notice reported not found or withdrawn on official portal.',
           verifiedAt,
         };
       }
 
-      // Check for expected identifiers
-      let idMatches = false;
-      if (options.expectedNoticeId) {
-        idMatches = html.includes(options.expectedNoticeId);
-      }
-      if (!idMatches && options.expectedReference) {
-        idMatches = html.includes(options.expectedReference);
+      // 1. Check official domain
+      let isOfficialDomain = false;
+      try {
+        const parsedUrl = new URL(finalRedirectUrl);
+        isOfficialDomain =
+          parsedUrl.hostname === 'www.find-tender.service.gov.uk' ||
+          parsedUrl.hostname === 'find-tender.service.gov.uk';
+      } catch {
+        isOfficialDomain = false;
       }
 
-      // Match Title
+      // 2. Check exact notice route
+      const isExactNoticeRoute = isOfficialDomain && finalRedirectUrl.includes('/Notice/');
+
+      // 3. Check notice identifier
+      let idMatches = false;
+      if (options.expectedNoticeId && html.includes(options.expectedNoticeId)) {
+        idMatches = true;
+      }
+      if (!idMatches && options.expectedReference && html.includes(options.expectedReference)) {
+        idMatches = true;
+      }
+
+      // 4. Check OCID / process identifier
+      let ocidMatches = false;
+      if (options.expectedOcid && html.includes(options.expectedOcid)) {
+        ocidMatches = true;
+      }
+
+      // 5. Match Title
       let titleMatches = false;
       if (options.expectedTitle) {
-        // Strip common punctuation and match core title substring
         const cleanTitle = options.expectedTitle
           .toLowerCase()
           .replace(/[^a-z0-9\s]/g, ' ')
@@ -121,7 +142,7 @@ export class UrlVerifier {
         }
       }
 
-      // Match Buyer
+      // 6. Match Buyer
       let buyerMatches = false;
       if (options.expectedBuyer) {
         const cleanBuyer = options.expectedBuyer
@@ -136,42 +157,52 @@ export class UrlVerifier {
         }
       }
 
-      // Compare dates where available
+      // 7. Check deadline date and flag mismatch
       let datesMatch = false;
+      let deadlineMismatch = false;
       if (options.expectedDeadline) {
         const deadlineDateStr = options.expectedDeadline.slice(0, 10);
         datesMatch = html.includes(deadlineDateStr);
+        if (!datesMatch) {
+          deadlineMismatch = true;
+        }
       }
 
-      // Check URL route pattern for official Find a Tender notice
-      const isOfficialNoticePath = finalRedirectUrl.includes('/Notice/');
+      const strongContentMatch = titleMatches || buyerMatches || ocidMatches;
 
+      // Grade classification rules
       let grade: VerificationGrade = 'D';
       let notes = '';
 
-      if (idMatches && (titleMatches || buyerMatches) && isOfficialNoticePath) {
+      if (isOfficialDomain && isExactNoticeRoute && idMatches && strongContentMatch) {
         grade = 'A';
-        notes = 'Grade A: Verified exact official notice page, notice ID, and buyer details confirmed.';
-      } else if (isOfficialNoticePath && (titleMatches || buyerMatches || idMatches)) {
-        grade = 'A';
-        notes = 'Grade A: Official notice page verified with matching procurement data.';
-      } else if (isOfficialNoticePath) {
+        notes = 'Grade A: Verified exact official notice page, notice ID, and buyer/title match on gov.uk.';
+        if (deadlineMismatch) {
+          notes += ' (Notice: Submission deadline text not confirmed on initial summary page).';
+        }
+      } else if (isOfficialDomain && isExactNoticeRoute && idMatches) {
         grade = 'B';
-        notes = 'Grade B: Official notice page verified, but buyer/title markers only partially matched.';
-      } else {
+        notes = 'Grade B: Verified notice ID on official portal route, but buyer/title were not clearly matched.';
+      } else if (isOfficialDomain && strongContentMatch) {
+        grade = 'B';
+        notes = 'Grade B: Procurement data found on official portal via portal route.';
+      } else if (isOfficialDomain) {
         grade = 'C';
-        notes = 'Grade C: Page loaded successfully but does not match official notice path format.';
+        notes = 'Grade C: Reached official domain, but could not confirm specific notice contents.';
+      } else {
+        grade = 'D';
+        notes = 'Grade D: Soft-404 or unexpected redirect away from official portal.';
       }
 
       return {
         grade,
-        isValid: true,
+        isValid: grade === 'A' || grade === 'B',
         httpStatus,
         finalRedirectUrl,
         titleMatches,
         buyerMatches,
         datesMatch,
-        routeCorrect: isOfficialNoticePath,
+        routeCorrect: isExactNoticeRoute,
         notes,
         verifiedAt,
       };

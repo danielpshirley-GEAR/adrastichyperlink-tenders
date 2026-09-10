@@ -32,9 +32,9 @@ export interface RawNoticeRecord {
   description: string;
   valueAmount?: number;
   valueCurrency?: string;
-  publishedAt: string;
-  submissionDeadline: string;
-  clarificationDeadline?: string;
+  publishedAt?: string | null;
+  submissionDeadline?: string | null;
+  clarificationDeadline?: string | null;
   officialNoticeUrl: string;
   applicationPortalUrl?: string;
   documentLinks: RawDocumentLink[];
@@ -46,6 +46,10 @@ export interface ScanResult {
   sourceId: string;
   scannedAt: string;
   noticesChecked: number;
+  pagesFetched: number;
+  apiRequestsMade: number;
+  rateLimitRetries: number;
+  durationMs: number;
   relevantCandidates: RawNoticeRecord[];
   errors: string[];
 }

@@ -12,8 +12,12 @@ export class ContractsFinderConnector implements ProcurementConnector {
       sourceId: this.id,
       scannedAt: new Date().toISOString(),
       noticesChecked: 0,
+      pagesFetched: 0,
+      apiRequestsMade: 0,
+      rateLimitRetries: 0,
+      durationMs: 0,
       relevantCandidates: [],
-      errors: [],
+      errors: ['Connector not implemented in Phase 2.1'],
     };
   }
 
@@ -25,44 +29,29 @@ export class ContractsFinderConnector implements ProcurementConnector {
     return this.scanNewNotices();
   }
 
-  async fetchNotice(noticeId: string): Promise<RawNoticeRecord | null> {
-    const noticeUrl = `${this.baseUrl}/notice/${noticeId}`;
-    return {
-      sourceId: this.id,
-      noticeId,
-      title: `Contracts Finder Notice ${noticeId}`,
-      buyerName: 'English Public Authority',
-      description: '',
-      publishedAt: new Date().toISOString(),
-      submissionDeadline: new Date(Date.now() + 14 * 86400000).toISOString(),
-      officialNoticeUrl: noticeUrl,
-      documentLinks: [],
-      cpvCodes: [],
-      rawPayload: {},
-    };
+  async fetchNotice(_noticeId: string): Promise<RawNoticeRecord | null> {
+    return null;
   }
 
-  async verifyNotice(noticeUrl: string, expectedNoticeId?: string): Promise<VerificationResult> {
-    const isExactUrl = noticeUrl.startsWith(this.baseUrl) && !noticeUrl.endsWith(this.baseUrl) && !noticeUrl.endsWith('/');
-    const matchesNotice = expectedNoticeId ? noticeUrl.includes(expectedNoticeId) : isExactUrl;
-
+  async verifyNotice(_noticeUrl: string): Promise<VerificationResult> {
     return {
-      grade: isExactUrl ? 'A' : 'D',
-      isValid: isExactUrl,
-      titleMatches: matchesNotice,
-      buyerMatches: matchesNotice,
-      datesMatch: matchesNotice,
-      routeCorrect: true,
-      notes: isExactUrl ? 'Verified official Contracts Finder notice URL.' : 'URL is generic or unverified.',
+      grade: 'D',
+      isValid: false,
+      httpStatus: 0,
+      titleMatches: false,
+      buyerMatches: false,
+      datesMatch: false,
+      routeCorrect: false,
+      notes: 'Contracts Finder connector pending implementation in Phase 3.',
       verifiedAt: new Date().toISOString(),
     };
   }
 
-  async findDocuments(noticeId: string): Promise<RawDocumentLink[]> {
+  async findDocuments(_noticeId: string): Promise<RawDocumentLink[]> {
     return [];
   }
 
-  async fetchUpdates(noticeId: string): Promise<Record<string, unknown>> {
+  async fetchUpdates(_noticeId: string): Promise<Record<string, unknown>> {
     return {};
   }
 }

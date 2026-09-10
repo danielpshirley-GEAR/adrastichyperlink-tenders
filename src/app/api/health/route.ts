@@ -7,7 +7,7 @@ import { SourcesRepository } from '@/shared/database/repositories/sources';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const dbHealth = checkDatabaseHealth();
+  const dbHealth = await checkDatabaseHealth();
   const geminiConfigured = GeminiClient.isConfigured();
   const ftsSource = SourcesRepository.getById('find_a_tender');
   const allSources = SourcesRepository.getAll();

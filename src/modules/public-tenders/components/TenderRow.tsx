@@ -64,9 +64,25 @@ export function TenderRow({ tender, basePath = '' }: TenderRowProps) {
       <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0 text-right">
         <div>
           <div className="text-xs font-mono font-bold text-gallery-charcoal">
-            {tender.valueDescription || (tender.valueAmount ? `£${tender.valueAmount.toLocaleString()}` : 'Value TBC')}
+            {tender.valueDescription || (tender.valueAmount ? `£${tender.valueAmount.toLocaleString()}` : 'Value not specified')}
           </div>
-          <div className="text-[11px] text-gallery-muted font-mono">{tender.daysRemaining} days remaining</div>
+          <div className="text-[11px] font-mono">
+            {tender.submissionDeadline ? (
+              tender.daysRemaining !== null && tender.daysRemaining !== undefined ? (
+                tender.daysRemaining === 0 ? (
+                  <span className="text-red-700 font-bold">Expired</span>
+                ) : (
+                  <span className="text-gallery-muted">{tender.daysRemaining} days remaining</span>
+                )
+              ) : (
+                <span className="text-gallery-muted">Due: {new Date(tender.submissionDeadline).toLocaleDateString()}</span>
+              )
+            ) : (
+              <span className="text-amber-800 bg-amber-50 border border-amber-300 text-[9px] font-bold px-1.5 py-0.5 rounded inline-block">
+                DEADLINE UNKNOWN — MANUAL REVIEW REQUIRED
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

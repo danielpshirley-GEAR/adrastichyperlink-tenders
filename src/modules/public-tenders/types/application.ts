@@ -20,8 +20,8 @@ export interface TenderApplication {
   tenderTitle: string;
   canonicalReference: string;
   buyerName: string;
-  submissionDeadline: string;
-  daysRemaining: number;
+  submissionDeadline?: string | null;
+  daysRemaining?: number | null;
   status: ApplicationStatus;
   bidDecision: "BID";
   overallSuitabilityScore: number;

@@ -4,15 +4,18 @@ import { FindATenderConnector } from '@/modules/public-tenders/connectors/find-a
 import { TenderClassifier } from '@/modules/public-tenders/services/tender-classifier';
 import { UrlVerifier } from '@/modules/public-tenders/services/url-verifier';
 import { TendersRepository } from '@/shared/database/repositories/tenders';
-import { SourcesRepository } from '@/shared/database/repositories/sources';
+import { SourcesRepository, SourceHealthStatus } from '@/shared/database/repositories/sources';
 import { BuyersRepository } from '@/shared/database/repositories/buyers';
-import { RawNoticeRecord } from '@/modules/public-tenders/connectors/types';
+import { GeminiClient } from '@/shared/ai/gemini-client';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   const startTime = Date.now();
   try {
     const body = await req.json().catch(() => ({}));
     const scanType = (body.scanType || 'quick').toLowerCase();
+    const maxPages = typeof body.maxPages === 'number' ? body.maxPages : (scanType === 'full' ? 10 : 3);
 
     const fts = new FindATenderConnector();
     const sourceRecord = SourcesRepository.getById('find_a_tender');
@@ -22,88 +25,132 @@ export async function POST(req: Request) {
       const sinceDate = sourceRecord?.lastSuccessfulScanAt
         ? new Date(sourceRecord.lastSuccessfulScanAt)
         : new Date(Date.now() - 3 * 86400000);
-      scanResult = await fts.scanNewNotices(sinceDate);
+      scanResult = await fts.scanNewNotices(sinceDate, { maxPages });
     } else if (scanType === 'deep') {
-      const liveRes = await fts.scanLiveNotices();
-      const pipeRes = await fts.scanPipeline();
+      const liveRes = await fts.scanLiveNotices({ maxPages });
+      const pipeRes = await fts.scanPipeline({ maxPages });
       scanResult = {
         sourceId: 'find_a_tender',
         scannedAt: new Date().toISOString(),
         noticesChecked: liveRes.noticesChecked + pipeRes.noticesChecked,
+        pagesFetched: liveRes.pagesFetched + pipeRes.pagesFetched,
+        apiRequestsMade: liveRes.apiRequestsMade + pipeRes.apiRequestsMade,
+        rateLimitRetries: liveRes.rateLimitRetries + pipeRes.rateLimitRetries,
+        durationMs: liveRes.durationMs + pipeRes.durationMs,
         relevantCandidates: [...liveRes.relevantCandidates, ...pipeRes.relevantCandidates],
         errors: [...liveRes.errors, ...pipeRes.errors],
       };
     } else {
       // 'full'
-      scanResult = await fts.scanLiveNotices();
+      scanResult = await fts.scanLiveNotices({ maxPages });
     }
 
-    const noticesChecked = scanResult.noticesChecked;
+    const rawReleasesFetched = scanResult.noticesChecked;
     const candidates = scanResult.relevantCandidates;
 
+    const uniqueNoticesSet = new Set<string>();
+    const uniqueOcidsSet = new Set<string>();
+
+    let expiredNotices = 0;
+    let deterministicallyRejected = 0;
+    let geminiAnalysed = 0;
     let strongCount = 0;
     let possibleCount = 0;
     let weakCount = 0;
+    let rejectCount = 0;
+    let canonicalTendersCreated = 0;
+    let canonicalTendersUpdated = 0;
     let duplicatesCount = 0;
-    let failuresCount = 0;
-    const savedTenders = [];
+    let urlVerificationFailures = 0;
+    let processingErrors = 0;
 
-    // Deduplicate incoming candidates by noticeId
-    const seenIds = new Set<string>();
-    const uniqueCandidates: RawNoticeRecord[] = [];
-    for (const c of candidates) {
-      if (seenIds.has(c.noticeId)) {
-        duplicatesCount++;
-      } else {
-        seenIds.add(c.noticeId);
-        uniqueCandidates.push(c);
-      }
-    }
+    const isGeminiAvailable = GeminiClient.isConfigured();
 
-    // Process each unique candidate
-    for (const candidate of uniqueCandidates) {
+    // Process all candidate releases
+    for (const candidate of candidates) {
       try {
-        // 1. Record raw notice JSON into database
-        SourcesRepository.recordSourceNotice(
+        uniqueNoticesSet.add(candidate.noticeId);
+        if (candidate.ocid) uniqueOcidsSet.add(candidate.ocid);
+
+        // 1. Record raw notice in database with content hashing & versioning
+        const rawRecordResult = SourcesRepository.recordSourceNotice(
           'find_a_tender',
           candidate.noticeId,
           candidate.rawPayload,
           candidate.officialNoticeUrl,
-          null,
+          null, // linked after tender save
           candidate.publishedAt,
           candidate.submissionDeadline,
-          (candidate.rawPayload as any)?.tag?.[0] || 'tender'
+          (candidate.rawPayload as any)?.tag?.[0] || 'tender',
+          candidate.ocid
         );
 
-        // 2. Classify candidate
+        if (rawRecordResult.isDuplicate) {
+          duplicatesCount++;
+        }
+
+        // 2. Check if deadline is already expired
+        const isExpired = candidate.submissionDeadline
+          ? new Date(candidate.submissionDeadline).getTime() < Date.now()
+          : false;
+
+        if (isExpired) {
+          expiredNotices++;
+        }
+
+        // 3. Classify candidate
         const classification = await TenderClassifier.classify({
           title: candidate.title,
           buyer: candidate.buyerName,
           description: candidate.description,
           cpvCodes: candidate.cpvCodes,
           valueAmount: candidate.valueAmount,
+          submissionDeadline: candidate.submissionDeadline || undefined,
           noticeType: 'tender',
         });
 
+        if (isGeminiAvailable) {
+          geminiAnalysed++;
+        }
+
         if (classification.relevance === 'REJECT') {
+          rejectCount++;
+          deterministicallyRejected++;
           continue;
         }
 
-        // 3. Buyer record
+        // 4. Record buyer
         const buyer = BuyersRepository.getOrCreate(candidate.buyerName, {
           buyerType: candidate.buyerType,
         });
 
-        // 4. Live URL Verification
+        // 5. Live URL verification with strict Grade A criteria
         const verification = await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
           expectedNoticeId: candidate.noticeId,
+          expectedOcid: candidate.ocid,
           expectedTitle: candidate.title,
           expectedBuyer: candidate.buyerName,
           expectedDeadline: candidate.submissionDeadline,
         });
 
-        // 5. Save canonical tender
+        if (verification.grade === 'X' || !verification.isValid) {
+          urlVerificationFailures++;
+        }
+
+        // 6. Check existing canonical tender for deduplication (by OCID first, then notice ID)
+        let existingTender = null;
+        if (candidate.ocid) {
+          existingTender = await TendersRepository.getByOcid(candidate.ocid);
+        }
+        if (!existingTender) {
+          existingTender = await TendersRepository.getByCanonicalReference(candidate.noticeId);
+        }
+
+        const isNewTender = !existingTender;
+
+        // 7. Save canonical tender
         const saved = await TendersRepository.save({
+          id: existingTender?.id,
           canonicalReference: candidate.noticeId,
           ocid: candidate.ocid,
           title: candidate.title,
@@ -115,17 +162,31 @@ export async function POST(req: Request) {
           valueDescription: candidate.valueAmount
             ? `£${candidate.valueAmount.toLocaleString()} ${candidate.valueCurrency || 'GBP'}`
             : undefined,
-          publishedAt: candidate.publishedAt || new Date().toISOString(),
-          submissionDeadline: candidate.submissionDeadline || new Date(Date.now() + 14 * 86400000).toISOString(),
-          clarificationDeadline: candidate.clarificationDeadline,
+          publishedAt: candidate.publishedAt || null,
+          submissionDeadline: candidate.submissionDeadline || null,
+          clarificationDeadline: candidate.clarificationDeadline || null,
           qualification: classification.relevance as any,
-          verificationGrade: verification.grade as any,
+          deterministicResult: classification.relevance as any,
+          aiResult: isGeminiAvailable ? (classification.relevance as any) : 'NOT_RUN',
+          finalQualification: classification.relevance as any,
+          lifecycleStatus: isExpired ? 'EXPIRED' : 'ACTIVE',
+          verificationGrade: verification.grade,
           officialNoticeUrl: candidate.officialNoticeUrl,
           applicationPortalUrl: candidate.applicationPortalUrl,
           serviceTags: classification.serviceMatches as any,
+          isArchived: isExpired,
         });
 
-        // 6. Record source link
+        if (isNewTender) {
+          canonicalTendersCreated++;
+        } else {
+          canonicalTendersUpdated++;
+        }
+
+        // 8. Link raw source notice to the canonical tender
+        SourcesRepository.linkSourceNoticesToTender(saved.id, candidate.noticeId, candidate.ocid);
+
+        // 9. Record link verification
         SourcesRepository.recordSourceLink(
           saved.id,
           'find_a_tender',
@@ -140,55 +201,78 @@ export async function POST(req: Request) {
         if (classification.relevance === 'STRONG') strongCount++;
         else if (classification.relevance === 'POSSIBLE') possibleCount++;
         else weakCount++;
-
-        savedTenders.push(saved);
       } catch (err: any) {
-        failuresCount++;
-        console.error(`Error processing notice ${candidate.noticeId}:`, err.message);
+        processingErrors++;
+        console.error(`[Scan] Error processing notice ${candidate.noticeId}:`, err.message);
       }
     }
 
     const durationMs = Date.now() - startTime;
-    const aiRelevant = strongCount + possibleCount + weakCount;
+    const relevantFound = strongCount + possibleCount + weakCount;
+
+    // Determine truthful health status
+    let healthStatus: SourceHealthStatus = 'healthy';
+    let errorMessage: string | null = null;
+
+    if (scanResult.errors.length > 0 && rawReleasesFetched === 0) {
+      healthStatus = 'error';
+      errorMessage = scanResult.errors[0];
+    } else if (scanResult.errors.length > 0 || processingErrors > 0 || urlVerificationFailures > (relevantFound * 0.5)) {
+      healthStatus = 'degraded';
+      errorMessage = scanResult.errors[0] || `${processingErrors} processing errors encountered`;
+    }
+
+    const isScanSuccessful = healthStatus === 'healthy' || (healthStatus === 'degraded' && rawReleasesFetched > 0);
 
     // Record scan run
     SourcesRepository.recordScanRun({
       scanType,
       sourceId: 'find_a_tender',
-      status: scanResult.errors.length > 0 && noticesChecked === 0 ? 'failed' : 'completed',
+      status: healthStatus === 'error' ? 'failed' : 'completed',
       completedAt: new Date().toISOString(),
-      noticesChecked,
+      noticesChecked: rawReleasesFetched,
       initialCandidates: candidates.length,
-      aiRelevant,
+      aiRelevant: relevantFound,
       strongCount,
       possibleCount,
       weakCount,
       duplicatesCount,
-      errorMessage: scanResult.errors[0] || null,
+      errorMessage,
       durationMs,
     });
 
-    // Update source health
-    SourcesRepository.updateHealth('find_a_tender', 'healthy', {
-      successful: true,
-      noticesScannedDelta: noticesChecked,
-      relevantFoundDelta: aiRelevant,
+    // Update source health truthfully
+    SourcesRepository.updateHealth('find_a_tender', healthStatus, {
+      successful: isScanSuccessful,
+      lastScanError: errorMessage,
+      noticesScannedDelta: rawReleasesFetched,
+      relevantFoundDelta: relevantFound,
     });
 
     return NextResponse.json({
       status: 'completed',
       scanType,
       source: 'Find a Tender (FTS)',
-      noticesChecked,
-      initialCandidates: candidates.length,
-      duplicatesCount,
-      relevantFound: aiRelevant,
+      sourceHealth: healthStatus,
+      pagesFetched: scanResult.pagesFetched,
+      rawReleasesFetched,
+      uniqueNotices: uniqueNoticesSet.size,
+      uniqueOcids: uniqueOcidsSet.size,
+      expiredNotices,
+      deterministicallyRejected,
+      geminiAnalysed,
       strongCount,
       possibleCount,
       weakCount,
-      failuresCount,
+      rejectCount,
+      canonicalTendersCreated,
+      canonicalTendersUpdated,
+      duplicatesCount,
+      urlVerificationFailures,
+      processingErrors,
       durationMs,
-      savedTendersCount: savedTenders.length,
+      apiRequestsMade: scanResult.apiRequestsMade,
+      rateLimitRetries: scanResult.rateLimitRetries,
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {

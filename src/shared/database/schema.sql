@@ -68,14 +68,18 @@ CREATE TABLE IF NOT EXISTS tenders (
     value_amount NUMERIC(14, 2),
     value_currency VARCHAR(8) DEFAULT 'GBP',
     value_description TEXT,
-    published_at TIMESTAMPTZ NOT NULL,
-    submission_deadline TIMESTAMPTZ NOT NULL,
+    published_at TIMESTAMPTZ,
+    submission_deadline TIMESTAMPTZ,
     clarification_deadline TIMESTAMPTZ,
     contract_start_at TIMESTAMPTZ,
     contract_end_at TIMESTAMPTZ,
     discovered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_verified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     qualification VARCHAR(32) NOT NULL DEFAULT 'POSSIBLE', -- 'STRONG', 'POSSIBLE', 'WEAK', 'REJECT'
+    deterministic_result VARCHAR(32),
+    ai_result VARCHAR(32),
+    final_qualification VARCHAR(32),
+    lifecycle_status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE',
     verification_grade VARCHAR(8) NOT NULL DEFAULT 'D', -- 'A', 'B', 'C', 'D', 'X'
     official_notice_url TEXT NOT NULL,
     application_portal_url TEXT,
@@ -89,6 +93,9 @@ CREATE TABLE IF NOT EXISTS source_notices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     source_id VARCHAR(64) REFERENCES sources(id) NOT NULL,
     notice_id VARCHAR(128) NOT NULL,
+    ocid VARCHAR(128),
+    content_hash VARCHAR(64),
+    version INTEGER NOT NULL DEFAULT 1,
     tender_id UUID REFERENCES tenders(id),
     raw_notice_json JSONB NOT NULL,
     notice_url TEXT NOT NULL,
@@ -384,3 +391,17 @@ CREATE INDEX IF NOT EXISTS idx_tenders_published_at ON tenders(published_at DESC
 CREATE INDEX IF NOT EXISTS idx_source_notices_source ON source_notices(source_id, notice_id);
 CREATE INDEX IF NOT EXISTS idx_requirements_tender ON tender_requirements(tender_id);
 CREATE INDEX IF NOT EXISTS idx_questions_app ON application_questions(application_id);
+
+-- ==============================================================================
+-- INITIAL 7 SOURCES SEED
+-- ==============================================================================
+INSERT INTO sources (id, name, portal_type, base_url, api_endpoint, health_status, is_active)
+VALUES
+    ('find_a_tender', 'Find a Tender (FTS)', 'primary_ocds', 'https://www.find-tender.service.gov.uk', 'https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages', 'healthy', true),
+    ('contracts_finder', 'Contracts Finder', 'low_value', 'https://www.contractsfinder.service.gov.uk', NULL, 'not_implemented', false),
+    ('public_contracts_scotland', 'Public Contracts Scotland (PCS)', 'devolved_scotland', 'https://www.publiccontractsscotland.gov.uk', NULL, 'not_implemented', false),
+    ('sell2wales', 'Sell2Wales', 'devolved_wales', 'https://www.sell2wales.gov.wales', NULL, 'not_implemented', false),
+    ('nhs_atamis', 'Health Family e-Procurement (Atamis)', 'healthcare', 'https://health-family.force.com/s/Welcome', NULL, 'not_implemented', false),
+    ('etenders_ni', 'eTendersNI', 'devolved_ni', 'https://etendersni.gov.uk', NULL, 'not_implemented', false),
+    ('mod_dsp', 'MOD Defence Sourcing Portal (DSP)', 'defence', 'https://www.contracts.mod.uk', NULL, 'not_implemented', false)
+ON CONFLICT (id) DO NOTHING;

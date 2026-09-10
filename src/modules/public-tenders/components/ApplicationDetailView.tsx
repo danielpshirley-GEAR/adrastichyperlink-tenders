@@ -82,8 +82,18 @@ export function ApplicationDetailView({
         <div className="flex flex-wrap items-center gap-6 text-xs text-gallery-muted pt-1">
           <div className="flex items-center gap-1.5 font-mono">
             <Clock className="w-3.5 h-3.5 text-amber-600" />
-            <span className="text-amber-800 font-semibold">{application.daysRemaining} days until deadline</span>
-            <span>({new Date(application.submissionDeadline).toLocaleDateString()})</span>
+            {application.submissionDeadline ? (
+              <>
+                <span className="text-amber-800 font-semibold">
+                  {application.daysRemaining !== null && application.daysRemaining !== undefined
+                    ? `${application.daysRemaining} days until deadline`
+                    : 'Active Deadline'}
+                </span>
+                <span>({new Date(application.submissionDeadline).toLocaleDateString()})</span>
+              </>
+            ) : (
+              <span className="text-amber-800 font-semibold">Deadline not published</span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5 font-mono">

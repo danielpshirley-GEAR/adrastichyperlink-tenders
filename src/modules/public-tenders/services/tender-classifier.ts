@@ -20,6 +20,7 @@ export interface ClassifierInput {
   cpvCodes?: string[];
   noticeType?: string;
   valueAmount?: number | null;
+  submissionDeadline?: string | null;
 }
 
 export class TenderClassifier {

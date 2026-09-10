@@ -8,38 +8,50 @@ export class NhsAtamisConnector implements ProcurementConnector {
   readonly portalType = 'healthcare_atamis';
 
   async scanNewNotices(): Promise<ScanResult> {
-    return { sourceId: this.id, scannedAt: new Date().toISOString(), noticesChecked: 0, relevantCandidates: [], errors: [] };
-  }
-  async scanLiveNotices(): Promise<ScanResult> { return this.scanNewNotices(); }
-  async scanPipeline(): Promise<ScanResult> { return this.scanNewNotices(); }
-  async fetchNotice(noticeId: string): Promise<RawNoticeRecord | null> {
     return {
       sourceId: this.id,
-      noticeId,
-      title: `NHS Atamis Opportunity ${noticeId}`,
-      buyerName: 'NHS Trust / ICB',
-      description: '',
-      publishedAt: new Date().toISOString(),
-      submissionDeadline: new Date(Date.now() + 14 * 86400000).toISOString(),
-      officialNoticeUrl: `${this.baseUrl}?id=${noticeId}`,
-      documentLinks: [],
-      cpvCodes: [],
-      rawPayload: {},
+      scannedAt: new Date().toISOString(),
+      noticesChecked: 0,
+      pagesFetched: 0,
+      apiRequestsMade: 0,
+      rateLimitRetries: 0,
+      durationMs: 0,
+      relevantCandidates: [],
+      errors: ['Connector not implemented in Phase 2.1'],
     };
   }
-  async verifyNotice(noticeUrl: string): Promise<VerificationResult> {
-    const isExactUrl = noticeUrl.includes('health-family') && noticeUrl.includes('id=');
+
+  async scanLiveNotices(): Promise<ScanResult> {
+    return this.scanNewNotices();
+  }
+
+  async scanPipeline(): Promise<ScanResult> {
+    return this.scanNewNotices();
+  }
+
+  async fetchNotice(_noticeId: string): Promise<RawNoticeRecord | null> {
+    return null;
+  }
+
+  async verifyNotice(_noticeUrl: string): Promise<VerificationResult> {
     return {
-      grade: isExactUrl ? 'B' : 'D',
-      isValid: isExactUrl,
-      titleMatches: isExactUrl,
-      buyerMatches: isExactUrl,
-      datesMatch: isExactUrl,
-      routeCorrect: true,
-      notes: isExactUrl ? 'Verified official NHS Atamis portal opportunity URL.' : 'URL is unverified.',
+      grade: 'D',
+      isValid: false,
+      httpStatus: 0,
+      titleMatches: false,
+      buyerMatches: false,
+      datesMatch: false,
+      routeCorrect: false,
+      notes: 'NHS Atamis connector pending implementation in Phase 3.',
       verifiedAt: new Date().toISOString(),
     };
   }
-  async findDocuments(): Promise<RawDocumentLink[]> { return []; }
-  async fetchUpdates(): Promise<Record<string, unknown>> { return {}; }
+
+  async findDocuments(): Promise<RawDocumentLink[]> {
+    return [];
+  }
+
+  async fetchUpdates(): Promise<Record<string, unknown>> {
+    return {};
+  }
 }

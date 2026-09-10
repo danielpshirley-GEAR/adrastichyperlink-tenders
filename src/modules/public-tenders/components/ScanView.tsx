@@ -135,19 +135,19 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
             )}
           </div>
           <div className="text-sm font-bold text-gallery-charcoal">
-            {healthData?.database?.healthy ? 'Persistent SQLite' : 'Database Offline'}
+            {healthData?.database?.type === 'postgres' ? 'Supabase / PostgreSQL' : healthData?.database?.healthy ? 'Persistent SQLite' : 'Database Offline'}
           </div>
           <p className="text-[11px] text-gallery-muted font-mono">
             {healthData?.database?.totalTenders ?? 0} saved tenders in repository
           </p>
         </div>
 
-        {/* Gemini AI Diagnostic */}
+        {/* Gemini AI / Deterministic Diagnostic */}
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-2 shadow-2xs">
           <div className="flex items-center justify-between">
             <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-sky-600" />
-              <span>AI CLASSIFIER</span>
+              <span>{healthData?.gemini?.configured ? 'AI CLASSIFIER' : 'DETERMINISTIC PRE-FILTER'}</span>
             </div>
             {healthData?.gemini?.configured ? (
               <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
@@ -155,7 +155,7 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
               </span>
             ) : (
               <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">
-                NOT CONFIGURED
+                GEMINI NOT CONFIGURED
               </span>
             )}
           </div>

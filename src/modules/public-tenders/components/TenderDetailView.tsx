@@ -127,9 +127,9 @@ export function TenderDetailView({
             <span>CONTRACT VALUE</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">
-            {tender.valueDescription || (tender.valueAmount ? `£${tender.valueAmount.toLocaleString()}` : 'TBC')}
+            {tender.valueDescription || (tender.valueAmount ? `£${tender.valueAmount.toLocaleString()}` : 'Value not specified')}
           </div>
-          <div className="text-[10px] text-gallery-muted">{tender.valueCurrency || 'GBP'} (Fixed/Framework)</div>
+          <div className="text-[10px] text-gallery-muted">{tender.valueCurrency || 'GBP'} (Official Notice)</div>
         </div>
 
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-1">
@@ -138,20 +138,38 @@ export function TenderDetailView({
             <span>SUBMISSION DEADLINE</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">
-            {tender.submissionDeadline ? new Date(tender.submissionDeadline).toLocaleDateString() : 'TBC'}
+            {tender.submissionDeadline ? new Date(tender.submissionDeadline).toLocaleDateString() : 'Deadline not published'}
           </div>
-          <div className="text-[10px] text-gallery-muted">{tender.daysRemaining} days remaining</div>
+          <div className="text-[10px] text-gallery-muted font-mono">
+            {tender.submissionDeadline ? (
+              tender.daysRemaining !== null && tender.daysRemaining !== undefined ? (
+                tender.daysRemaining === 0 ? (
+                  <span className="text-red-700 font-bold">Deadline passed (EXPIRED)</span>
+                ) : (
+                  `${tender.daysRemaining} days remaining`
+                )
+              ) : (
+                'Deadline specified'
+              )
+            ) : (
+              <span className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300 text-[9px]">
+                DEADLINE UNKNOWN — MANUAL REVIEW REQUIRED
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-1">
           <div className="text-xs font-mono text-gallery-muted flex items-center gap-1.5">
             <Calendar className="w-3.5 h-3.5 text-tender-primary" />
-            <span>DISCOVERED ON</span>
+            <span>PUBLISHED DATE</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">
-            {tender.discoveredAt ? new Date(tender.discoveredAt).toLocaleDateString() : 'Today'}
+            {tender.publishedAt ? new Date(tender.publishedAt).toLocaleDateString() : 'Publication date unavailable'}
           </div>
-          <div className="text-[10px] text-gallery-muted">Automated FTS Ingestion</div>
+          <div className="text-[10px] text-gallery-muted font-mono">
+            {tender.publishedAt ? 'Verified in OCDS notice' : 'Not stated in notice release'}
+          </div>
         </div>
 
         <div className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-1">
@@ -160,7 +178,7 @@ export function TenderDetailView({
             <span>BUYER SECTOR</span>
           </div>
           <div className="text-base font-extrabold text-gallery-charcoal">{tender.buyerType}</div>
-          <div className="text-[10px] text-gallery-muted">UK Public Authority</div>
+          <div className="text-[10px] text-gallery-muted">UK Public Body</div>
         </div>
       </section>
 

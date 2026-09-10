@@ -1,7 +1,22 @@
 // src/shared/database/repositories/applications.ts
+import { IApplicationsRepository } from '../interfaces';
 import { getDb } from '../db';
 import { randomUUID } from 'crypto';
 import { TenderApplication, ApplicationStatus } from '@/modules/public-tenders/types/application';
+
+export class SqliteApplicationsRepository implements IApplicationsRepository {
+  async getAll(): Promise<TenderApplication[]> {
+    return ApplicationsRepository.getAll();
+  }
+
+  async getById(id: string): Promise<TenderApplication | null> {
+    return ApplicationsRepository.getById(id);
+  }
+
+  async createFromTender(tenderId: string): Promise<TenderApplication> {
+    return ApplicationsRepository.createShellForTender(tenderId);
+  }
+}
 
 export class ApplicationsRepository {
   static async getAll(): Promise<TenderApplication[]> {
@@ -59,16 +74,18 @@ export class ApplicationsRepository {
 
     db.prepare(`
       INSERT INTO applications (
-        id, tender_id, status, progress_percentage, submission_deadline,
-        portal_submission_url, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        id, tender_id, status, submission_deadline,
+        tender_title, canonical_reference, buyer_name,
+        created_at, last_updated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       tenderId,
-      'in_progress',
-      0,
-      tender.submission_deadline,
-      tender.official_notice_url,
+      'DRAFT',
+      tender.submission_deadline || null,
+      tender.title,
+      tender.canonical_reference,
+      tender.buyer_name,
       now,
       now
     );
@@ -79,9 +96,13 @@ export class ApplicationsRepository {
 }
 
 function mapRowToApplication(row: any): TenderApplication {
-  const daysRemaining = row.submission_deadline
-    ? Math.max(0, Math.ceil((new Date(row.submission_deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 0;
+  let daysRemaining: number | null = null;
+  if (row.submission_deadline) {
+    const deadline = new Date(row.submission_deadline).getTime();
+    if (!isNaN(deadline)) {
+      daysRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / (1000 * 60 * 60 * 24)));
+    }
+  }
 
   return {
     id: row.id,
@@ -89,7 +110,7 @@ function mapRowToApplication(row: any): TenderApplication {
     tenderTitle: row.tender_title || 'Untitled Opportunity',
     canonicalReference: row.canonical_reference || 'REF-TBC',
     buyerName: row.buyer_name || 'Public Body',
-    submissionDeadline: row.submission_deadline,
+    submissionDeadline: row.submission_deadline || null,
     daysRemaining,
     status: (row.status?.toUpperCase() === 'SUBMITTED' ? 'SUBMITTED' : row.status?.toUpperCase() === 'READY_FOR_REVIEW' ? 'READY_FOR_REVIEW' : 'DRAFT') as ApplicationStatus,
     bidDecision: 'BID',
@@ -97,7 +118,7 @@ function mapRowToApplication(row: any): TenderApplication {
     winThemes: ['Agile Motion Delivery', 'Verified Brand Compliance'],
     questionsCount: 0,
     factsRequiredCount: 0,
-    lastUpdated: row.updated_at || new Date().toISOString(),
+    lastUpdated: row.last_updated || row.updated_at || new Date().toISOString(),
     questions: [],
   };
 }

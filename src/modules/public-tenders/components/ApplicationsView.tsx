@@ -112,10 +112,10 @@ export function ApplicationsView({
                   <div className="text-right">
                     <div className="text-xs font-mono font-bold text-gallery-charcoal flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      <span>{app.daysRemaining} days left</span>
+                      <span>{app.daysRemaining !== null && app.daysRemaining !== undefined ? `${app.daysRemaining} days left` : 'Active Application'}</span>
                     </div>
-                    <div className="text-[10px] text-gallery-muted">
-                      Due: {new Date(app.submissionDeadline).toLocaleDateString()}
+                    <div className="text-[10px] text-gallery-muted font-mono">
+                      {app.submissionDeadline ? `Due: ${new Date(app.submissionDeadline).toLocaleDateString()}` : 'Deadline not published'}
                     </div>
                   </div>
 

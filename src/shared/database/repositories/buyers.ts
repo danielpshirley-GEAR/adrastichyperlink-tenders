@@ -1,4 +1,5 @@
 // src/shared/database/repositories/buyers.ts
+import { IBuyersRepository } from '../interfaces';
 import { getDb } from '../db';
 import { randomUUID } from 'crypto';
 
@@ -10,6 +11,12 @@ export interface BuyerRecord {
   contactEmail?: string | null;
   procurementPortal?: string | null;
   notes?: string | null;
+}
+
+export class SqliteBuyersRepository implements IBuyersRepository {
+  async getOrCreate(name: string, data?: { buyerType?: string; website?: string }): Promise<{ id: string; name: string }> {
+    return BuyersRepository.getOrCreate(name, data);
+  }
 }
 
 export class BuyersRepository {

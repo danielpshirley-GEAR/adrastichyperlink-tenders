@@ -131,15 +131,15 @@ export class SourceRegistry {
         scanFrequency: 'Daily 07:00',
       },
       {
-        id: 'crown_commercial_service',
-        name: 'Crown Commercial Service (CCS)',
-        baseUrl: 'https://www.crowncommercial.gov.uk',
-        portalType: 'frameworks',
+        id: 'mod_dsp',
+        name: 'MOD Defence Sourcing Portal (DSP)',
+        baseUrl: 'https://www.contracts.mod.uk',
+        portalType: 'defence',
         health: 'not_implemented',
         lastScanAt: null,
         noticesChecked: 0,
         relevantFound: 0,
-        scanFrequency: 'Weekly',
+        scanFrequency: 'Daily 08:00',
       },
     ];
   }
