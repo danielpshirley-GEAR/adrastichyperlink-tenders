@@ -1,12 +1,13 @@
 // src/app/api/sources/route.ts
 import { NextResponse } from 'next/server';
-import { SourcesRepository } from '@/shared/database/repositories/sources';
+import { getSourcesRepository } from '@/shared/database/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const sources = SourcesRepository.getAll();
+    const sourcesRepo = getSourcesRepository();
+    const sources = await sourcesRepo.getAll();
     const activeSources = sources.filter((s) => s.isActive);
     const healthySources = sources.filter((s) => s.healthStatus === 'healthy');
 

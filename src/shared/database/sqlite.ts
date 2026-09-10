@@ -9,6 +9,10 @@ const DB_PATH = path.join(DB_DIR, 'adrastichyperlink.db');
 let dbInstance: Database.Database | null = null;
 
 export function getSqliteDb(): Database.Database {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: SQLite is strictly forbidden in production. Supabase / PostgreSQL must be configured.');
+  }
+
   if (dbInstance) {
     return dbInstance;
   }
@@ -36,7 +40,7 @@ function initializeTables(db: Database.Database): void {
       portal_type TEXT NOT NULL,
       base_url TEXT NOT NULL,
       api_endpoint TEXT,
-      health_status TEXT NOT NULL DEFAULT 'not_implemented',
+      health_status TEXT NOT NULL DEFAULT 'untested',
       last_successful_scan_at TEXT,
       last_attempt_at TEXT,
       last_scan_error TEXT,
@@ -148,8 +152,22 @@ function initializeTables(db: Database.Database): void {
       tender_id TEXT NOT NULL UNIQUE REFERENCES tenders(id) ON DELETE CASCADE,
       decision TEXT NOT NULL,
       reasoning TEXT,
-      decided_at TEXT NOT NULL DEFAULT (datetime('now'))
+      decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+      gemini_recommendation TEXT,
+      gemini_reasoning TEXT,
+      capability_fit_score REAL,
+      bid_effort TEXT DEFAULT 'MEDIUM',
+      commercial_value_assessment TEXT,
+      decision_notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_source_notices_unique_release ON source_notices (source_id, notice_id, content_hash);
+    CREATE INDEX IF NOT EXISTS idx_source_notices_ocid ON source_notices (ocid);
+    CREATE INDEX IF NOT EXISTS idx_source_notices_tender_id ON source_notices (tender_id);
+    CREATE INDEX IF NOT EXISTS idx_tenders_ocid ON tenders (ocid);
+    CREATE INDEX IF NOT EXISTS idx_tenders_canonical_ref ON tenders (canonical_reference);
 
     CREATE TABLE IF NOT EXISTS applications (
       id TEXT PRIMARY KEY,
@@ -344,7 +362,7 @@ function seedSources(db: Database.Database): void {
       portal_type: 'primary_ocds',
       base_url: 'https://www.find-tender.service.gov.uk',
       api_endpoint: 'https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages',
-      health_status: 'healthy',
+      health_status: 'untested',
       is_active: 1,
     },
     {

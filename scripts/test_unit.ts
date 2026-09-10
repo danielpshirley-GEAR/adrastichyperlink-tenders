@@ -1,0 +1,163 @@
+// scripts/test_unit.ts
+import assert from 'assert';
+import { DeterministicFilter } from '../src/modules/public-tenders/services/deterministic-filter';
+import { TenderClassifier } from '../src/modules/public-tenders/services/tender-classifier';
+import { UrlVerifier } from '../src/modules/public-tenders/services/url-verifier';
+import { FindATenderConnector } from '../src/modules/public-tenders/connectors/find-a-tender';
+import { getSqliteDb } from '../src/shared/database/sqlite';
+import { checkDatabaseHealth, getDb } from '../src/shared/database/db';
+
+async function runUnitTests() {
+  console.log('====================================================');
+  console.log('RUNNING UNIT & OFFLINE ADAPTER TEST SUITE');
+  console.log('====================================================\n');
+
+  let passed = 0;
+  let total = 0;
+
+  function test(name: string, fn: () => void | Promise<void>) {
+    total++;
+    try {
+      const res = fn();
+      if (res && typeof (res as any).then === 'function') {
+        return (res as any).then(
+          () => {
+            console.log(`[PASS] ${name}`);
+            passed++;
+          },
+          (err: any) => {
+            console.error(`[FAIL] ${name}: ${err.message}`);
+            process.exitCode = 1;
+          }
+        );
+      } else {
+        console.log(`[PASS] ${name}`);
+        passed++;
+      }
+    } catch (err: any) {
+      console.error(`[FAIL] ${name}: ${err.message}`);
+      process.exitCode = 1;
+    }
+  }
+
+  // 1. Deterministic Filter: Positive matching
+  test('Deterministic Filter accepts motion design / animation keywords', () => {
+    const res = DeterministicFilter.evaluate({
+      title: 'Creative Motion Design & Brand Animation Agency',
+      description: 'Production of high quality 2D and 3D explanatory videos.',
+    });
+    assert.strictEqual(res.qualification, 'STRONG');
+    assert.ok(res.matchedKeywords.length > 0);
+  });
+
+  // 2. Deterministic Filter: Negative exclusion
+  test('Deterministic Filter strictly rejects CCTV / Surveillance', () => {
+    const res = DeterministicFilter.evaluate({
+      title: 'Supply and Installation of CCTV Surveillance Cameras',
+      description: 'Public realm security camera systems and network recording.',
+    });
+    assert.strictEqual(res.qualification, 'REJECT');
+    assert.strictEqual(res.isNegativeMatch, true);
+  });
+
+  // 3. TenderClassifier separated outputs
+  await test('TenderClassifier separates deterministic and AI structures', async () => {
+    const res = await TenderClassifier.classify({
+      title: 'Motion Graphics and Public Information Video Partner',
+      buyer: 'Department for Education',
+      description: 'Produce high-impact 2D motion graphics and social video assets.',
+    });
+    assert.ok(res.deterministic, 'Missing deterministic result');
+    assert.ok(res.ai, 'Missing ai result');
+    assert.ok(res.final, 'Missing final result');
+    assert.ok(['STRONG', 'POSSIBLE'].includes(res.final.relevance));
+    assert.ok(['RUN', 'UNCONFIGURED'].includes(res.ai.status));
+  });
+
+  // 4. URL Verifier: Official domain validation
+  await test('UrlVerifier rejects non-official domains', async () => {
+    const res = await UrlVerifier.verifyNoticeUrl('https://fraudulent-tender-portal.fake.org/notice/123');
+    assert.strictEqual(res.grade, 'X');
+    assert.strictEqual(res.isValid, false);
+  });
+
+  // 5. OCDS Release Parser Fixture (no fake dates)
+  test('FindATenderConnector parses OCDS release without date fallbacks', () => {
+    const fts = new FindATenderConnector();
+    const mockRelease = {
+      id: 'test-release-001',
+      ocid: 'ocds-test-procurement-1',
+      tender: {
+        id: 'test-release-001',
+        title: 'Creative Branding Services',
+        description: 'Brand identity and guidelines.',
+        value: { amount: 50000, currency: 'GBP' },
+        // Intentionally omit publishedDate and tenderPeriod.endDate
+      },
+      buyer: {
+        name: 'Historic England',
+      },
+    };
+
+    const parsed = (fts as any).parseOcdsRelease(mockRelease);
+    assert.ok(parsed, 'Parsed notice should not be null');
+    assert.strictEqual(parsed.publishedAt, null, 'publishedAt must be null when omitted');
+    assert.strictEqual(parsed.submissionDeadline, null, 'submissionDeadline must be null when omitted');
+    assert.strictEqual(parsed.valueAmount, 50000);
+    assert.strictEqual(parsed.buyerName, 'Historic England');
+  });
+
+  // 6. Local SQLite schema and unique constraint verification
+  test('Local SQLite database enforces unique release constraint', () => {
+    const db = getDb();
+    const testNoticeId = 'TEST-UNIT-UNIQUE-01';
+    const testSourceId = 'find_a_tender';
+    const testHash = 'deadbeef1234567890abcdef';
+
+    db.prepare('DELETE FROM source_notices WHERE notice_id = ?').run(testNoticeId);
+
+    db.prepare(`
+      INSERT INTO source_notices (
+        id, source_id, notice_id, raw_notice_json, notice_url, content_hash, version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run('u1', testSourceId, testNoticeId, '{}', 'https://example.com', testHash, 1);
+
+    // Attempting to insert identical (source_id, notice_id, content_hash) must throw unique constraint violation
+    assert.throws(() => {
+      db.prepare(`
+        INSERT INTO source_notices (
+          id, source_id, notice_id, raw_notice_json, notice_url, content_hash, version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run('u2', testSourceId, testNoticeId, '{}', 'https://example.com', testHash, 1);
+    });
+
+    db.prepare('DELETE FROM source_notices WHERE notice_id = ?').run(testNoticeId);
+  });
+
+  // 7. Fail-closed production database guard
+  await test('Fail-closed production database guard blocks SQLite in production', async () => {
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      // Without Supabase configured, checkDatabaseHealth must return PRODUCTION DATABASE NOT CONFIGURED
+      const health = await checkDatabaseHealth();
+      assert.strictEqual(health.healthy, false);
+      assert.strictEqual(health.error, 'PRODUCTION DATABASE NOT CONFIGURED');
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
+
+  console.log(`\n====================================================`);
+  console.log(`UNIT SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);
+  console.log(`====================================================\n`);
+
+  if (passed !== total) {
+    process.exit(1);
+  }
+}
+
+runUnitTests().catch((err) => {
+  console.error('Unit test fatal error:', err);
+  process.exit(1);
+});

@@ -1,7 +1,8 @@
 // src/modules/public-tenders/connectors/registry.ts
 import { ProcurementConnector } from './types';
 import { FindATenderConnector } from './find-a-tender';
-import { SourcesRepository, SourceHealthStatus } from '@/shared/database/repositories/sources';
+import { getSourcesRepository } from '@/shared/database/db';
+import { SourceHealthStatus } from '@/shared/database/repositories/sources';
 
 export interface SourceMeta {
   id: string;
@@ -43,9 +44,10 @@ export class SourceRegistry {
     return Array.from(this.connectors.values());
   }
 
-  public getSourcesMeta(): SourceMeta[] {
+  public async getSourcesMeta(): Promise<SourceMeta[]> {
     try {
-      const records = SourcesRepository.getAll();
+      const sourcesRepo = getSourcesRepository();
+      const records = await sourcesRepo.getAll();
       if (records.length > 0) {
         return records.map((r) => ({
           id: r.id,
@@ -69,7 +71,7 @@ export class SourceRegistry {
         name: 'Find a Tender (FTS)',
         baseUrl: 'https://www.find-tender.service.gov.uk',
         portalType: 'primary_ocds',
-        health: 'healthy',
+        health: 'untested',
         lastScanAt: null,
         noticesChecked: 0,
         relevantFound: 0,

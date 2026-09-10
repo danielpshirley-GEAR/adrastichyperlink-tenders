@@ -3,7 +3,7 @@ import { ISourcesRepository } from '../interfaces';
 import { getDb } from '../db';
 import { randomUUID, createHash } from 'crypto';
 
-export type SourceHealthStatus = 'healthy' | 'degraded' | 'error' | 'disabled' | 'not_implemented';
+export type SourceHealthStatus = 'untested' | 'healthy' | 'degraded' | 'error' | 'disabled' | 'not_implemented';
 
 export interface SourceRecord {
   id: string;
@@ -111,8 +111,8 @@ export class SqliteSourcesRepository implements ISourcesRepository {
     );
   }
 
-  async linkSourceNoticesToTender(tenderId: string, noticeId: string, ocid?: string): Promise<void> {
-    SourcesRepository.linkSourceNoticesToTender(tenderId, noticeId, ocid);
+  async linkSourceNoticesToTender(sourceId: string, tenderId: string, noticeId: string, ocid?: string): Promise<void> {
+    SourcesRepository.linkSourceNoticesToTender(sourceId, tenderId, noticeId, ocid);
   }
 }
 
@@ -171,17 +171,25 @@ export class SourcesRepository {
     const db = getDb();
     const now = new Date().toISOString();
 
+    const params: any[] = [status, now, now];
     let query = `
       UPDATE sources SET
         health_status = ?,
         last_attempt_at = ?,
         updated_at = ?
     `;
-    const params: any[] = [status, now, now];
-
-    if (stats?.successful) {
+    if (status === 'healthy' && stats?.successful) {
       query += `, last_successful_scan_at = ?, last_scan_error = NULL`;
       params.push(now);
+    } else if (status === 'degraded') {
+      if (stats?.lastScanError !== undefined) {
+        query += `, last_scan_error = ?`;
+        params.push(stats.lastScanError);
+      }
+      if (stats?.successful) {
+        query += `, last_successful_scan_at = ?`;
+        params.push(now);
+      }
     } else if (stats?.lastScanError !== undefined) {
       query += `, last_scan_error = ?`;
       params.push(stats.lastScanError);
@@ -332,11 +340,11 @@ export class SourcesRepository {
     );
   }
 
-  static linkSourceNoticesToTender(tenderId: string, noticeId: string, ocid?: string): void {
+  static linkSourceNoticesToTender(sourceId: string, tenderId: string, noticeId: string, ocid?: string): void {
     const db = getDb();
-    db.prepare('UPDATE source_notices SET tender_id = ? WHERE notice_id = ?').run(tenderId, noticeId);
+    db.prepare('UPDATE source_notices SET tender_id = ? WHERE source_id = ? AND notice_id = ?').run(tenderId, sourceId, noticeId);
     if (ocid) {
-      db.prepare('UPDATE source_notices SET tender_id = ? WHERE ocid = ?').run(tenderId, ocid);
+      db.prepare('UPDATE source_notices SET tender_id = ? WHERE source_id = ? AND ocid = ?').run(tenderId, sourceId, ocid);
     }
   }
 }

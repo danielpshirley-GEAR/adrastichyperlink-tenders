@@ -168,7 +168,7 @@ async function runHardenSuite() {
     });
 
     SourcesRepository.recordSourceNotice('find_a_tender', testNoticeId, { sample: 1 }, 'https://example.com');
-    SourcesRepository.linkSourceNoticesToTender(testTender.id, testNoticeId);
+    SourcesRepository.linkSourceNoticesToTender('find_a_tender', testTender.id, testNoticeId);
 
     const row = db.prepare('SELECT tender_id FROM source_notices WHERE notice_id = ?').get(testNoticeId) as any;
     db.prepare('DELETE FROM source_notices WHERE notice_id = ?').run(testNoticeId);
@@ -234,18 +234,39 @@ async function runHardenSuite() {
 
   // TEST J: Supabase/PostgreSQL repository interface & persistence architecture
   try {
-    process.stdout.write('TEST J: Repository abstraction for Supabase/Postgres & SQLite... ');
-    const { getTendersRepository, getSourcesRepository, checkDatabaseHealth: chk } = await import('../src/shared/database/db');
-    const tRepo = getTendersRepository();
-    const sRepo = getSourcesRepository();
-    const probe = await chk();
+    process.stdout.write('TEST J: Repository abstraction & production database check... ');
+    const { isSupabaseConfigured, getSupabaseClient } = await import('../src/shared/database/supabase');
+    const { checkDatabaseHealth: chk } = await import('../src/shared/database/db');
 
-    if (tRepo && sRepo && probe.healthy) {
+    if (isSupabaseConfigured()) {
+      const client = getSupabaseClient()!;
+      const testId = 'test-supabase-probe-' + Date.now();
+
+      const { error: insErr } = await client.from('db_health_probes').insert({ id: testId, probed_at: new Date().toISOString() });
+      if (insErr) throw insErr;
+
+      const { data: retrieved, error: getErr } = await client.from('db_health_probes').select('*').eq('id', testId).single();
+      if (getErr || !retrieved) throw new Error('Supabase retrieval failed');
+
+      await client.from('db_health_probes').delete().eq('id', testId);
+
       results['J'] = true;
-      console.log(`PASS (active engine: ${probe.type}, repositories initialized)`);
+      console.log('PASS (Supabase PostgreSQL verified with real write/read/delete)');
     } else {
-      results['J'] = false;
-      console.log('FAIL');
+      const origEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+        const health = await chk();
+        if (health.healthy === false && health.error === 'PRODUCTION DATABASE NOT CONFIGURED') {
+          results['J'] = true;
+          console.log('PASS (local mode: fail-closed production guard verified; Supabase credentials pending for cloud)');
+        } else {
+          results['J'] = false;
+          console.log('FAIL (production did not fail closed)');
+        }
+      } finally {
+        process.env.NODE_ENV = origEnv;
+      }
     }
   } catch (e: any) {
     results['J'] = false;
@@ -285,10 +306,20 @@ async function runHardenSuite() {
     const isConfigured = GeminiClient.isConfigured();
     if (!isConfigured) {
       results['L'] = true;
-      console.log('PASS (truthfully UNCONFIGURED, deterministic fallback active)');
+      console.log('UNCONFIGURED / DETERMINISTIC (Gemini API key not configured; deterministic fallback active)');
     } else {
-      results['L'] = true;
-      console.log('PASS (Gemini CONFIGURED with valid key)');
+      const res = await (await import('../src/modules/public-tenders/services/tender-classifier')).TenderClassifier.classify({
+        title: 'Motion Design and Brand Video Production',
+        buyer: 'Department for Education',
+        description: 'Creation of educational 2D animated videos.',
+      });
+      if (res.ai.status === 'RUN' && res.ai.relevance) {
+        results['L'] = true;
+        console.log(`PASS (Gemini live call succeeded: ${res.ai.model}, relevance: ${res.ai.relevance})`);
+      } else {
+        results['L'] = false;
+        console.log(`FAIL (Gemini status: ${res.ai.status})`);
+      }
     }
   } catch (e: any) {
     results['L'] = false;
@@ -299,13 +330,20 @@ async function runHardenSuite() {
   try {
     process.stdout.write('TEST M: No review fixtures in production routes... ');
     const allTenders = await TendersRepository.getAll();
-    const hasReviewFixture = allTenders.some((t) => t.id === 'tender-dfe-creative-2026' || t.title.includes('Department for Education'));
-    if (!hasReviewFixture) {
+    const fixtureIds = ['tender-dfe-creative-2026', 'tender-ace-branding-2026', 'tender-nhs-motion-2026', 'app-dfe-01'];
+    const hasFixtureInDb = allTenders.some((t) => fixtureIds.includes(t.id));
+
+    const fs = await import('fs');
+    const todayPage = fs.readFileSync('src/app/today/page.tsx', 'utf8');
+    const tendersPage = fs.readFileSync('src/app/tenders/page.tsx', 'utf8');
+    const hasFixtureImports = todayPage.includes('reviewTenders') || tendersPage.includes('reviewTenders');
+
+    if (!hasFixtureInDb && !hasFixtureImports) {
       results['M'] = true;
-      console.log('PASS (production database free from review fixtures)');
+      console.log('PASS (production database and page components free from review fixtures)');
     } else {
       results['M'] = false;
-      console.log('FAIL (found review fixtures in production database)');
+      console.log(`FAIL (hasFixtureInDb: ${hasFixtureInDb}, hasFixtureImports: ${hasFixtureImports})`);
     }
   } catch (e: any) {
     results['M'] = false;
@@ -315,9 +353,17 @@ async function runHardenSuite() {
   // TEST N: No fake company credentials in production
   try {
     process.stdout.write('TEST N: No fake company credentials in production knowledge base... ');
-    // In production mode, KnowledgeView renders MISSING INFORMATION empty states
-    results['N'] = true;
-    console.log('PASS (empty state enforced in production mode)');
+    const fs = await import('fs');
+    const knowledgePage = fs.readFileSync('src/app/knowledge/page.tsx', 'utf8');
+    const usesReviewInProd = knowledgePage.includes('isReviewMode={true}') || knowledgePage.includes('reviewKnowledge');
+
+    if (!usesReviewInProd) {
+      results['N'] = true;
+      console.log('PASS (production knowledge enforces empty states; zero fabricated case studies/credentials)');
+    } else {
+      results['N'] = false;
+      console.log(`FAIL (usesReviewInProd: ${usesReviewInProd})`);
+    }
   } catch (e: any) {
     results['N'] = false;
     console.log(`FAIL (${e.message})`);

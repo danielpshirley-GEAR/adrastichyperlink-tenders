@@ -11,7 +11,29 @@ export const TenderClassificationSchema = z.object({
   confidence: z.number().min(0).max(100),
 });
 
-export type TenderClassification = z.infer<typeof TenderClassificationSchema>;
+export interface ClassificationResult {
+  deterministic: {
+    relevance: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
+    matchedKeywords: string[];
+    rejectedReason?: string;
+    score: number;
+  };
+  ai: {
+    status: 'RUN' | 'NOT_RUN' | 'FAILED' | 'UNCONFIGURED';
+    relevance?: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
+    serviceMatches: string[];
+    reason?: string;
+    confidence?: number;
+    model?: string;
+  };
+  final: {
+    relevance: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
+    reason: string;
+    serviceMatches: string[];
+  };
+}
+
+export type TenderClassification = ClassificationResult;
 
 export interface ClassifierInput {
   title: string;
@@ -26,9 +48,9 @@ export interface ClassifierInput {
 export class TenderClassifier {
   /**
    * Evaluates an incoming public sector procurement opportunity.
-   * Employs deterministic negative exclusion first, then Gemini AI structured classification.
+   * Genuinely separates deterministic keyword pre-filter from Gemini AI structured classification.
    */
-  static async classify(input: ClassifierInput): Promise<TenderClassification> {
+  static async classify(input: ClassifierInput): Promise<ClassificationResult> {
     // 1. Fast deterministic pre-filter
     const deterministic = DeterministicFilter.evaluate({
       title: input.title,
@@ -37,14 +59,26 @@ export class TenderClassifier {
       noticeType: input.noticeType,
     });
 
-    // If deterministic filter strongly rejected (e.g. CCTV, surveillance, sign manufacturing), don't waste AI calls
+    const deterministicResult = {
+      relevance: deterministic.qualification,
+      matchedKeywords: deterministic.matchedKeywords,
+      rejectedReason: deterministic.rejectedReason || undefined,
+      score: deterministic.score,
+    };
+
+    // If deterministic filter strongly rejected (e.g. CCTV, surveillance, sign manufacturing), do not waste AI calls
     if (deterministic.isNegativeMatch || deterministic.qualification === 'REJECT') {
       return {
-        relevance: 'REJECT',
-        serviceMatches: [],
-        reason: deterministic.rejectedReason || 'Opportunity rejected by deterministic exclusion criteria.',
-        falsePositive: deterministic.isNegativeMatch,
-        confidence: 95,
+        deterministic: deterministicResult,
+        ai: {
+          status: 'NOT_RUN',
+          serviceMatches: [],
+        },
+        final: {
+          relevance: 'REJECT',
+          reason: deterministic.rejectedReason || 'Opportunity rejected by deterministic exclusion criteria.',
+          serviceMatches: [],
+        },
       };
     }
 
@@ -78,7 +112,13 @@ Respond strictly in valid JSON matching this schema:
 `;
 
       try {
-        const result = await GeminiClient.generateJson<TenderClassification>(prompt, {
+        const result = await GeminiClient.generateJson<{
+          relevance: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
+          serviceMatches: string[];
+          reason: string;
+          falsePositive: boolean;
+          confidence: number;
+        }>(prompt, {
           tier: 1,
           temperature: 0.1,
           systemInstruction:
@@ -88,24 +128,58 @@ Respond strictly in valid JSON matching this schema:
         if (result) {
           const validated = TenderClassificationSchema.safeParse(result);
           if (validated.success) {
-            return validated.data;
+            return {
+              deterministic: deterministicResult,
+              ai: {
+                status: 'RUN',
+                relevance: validated.data.relevance,
+                serviceMatches: validated.data.serviceMatches,
+                reason: validated.data.reason,
+                confidence: validated.data.confidence,
+                model: GeminiClient.getModelForTier(1),
+              },
+              final: {
+                relevance: validated.data.relevance,
+                reason: validated.data.reason,
+                serviceMatches: validated.data.serviceMatches,
+              },
+            };
           }
         }
       } catch (err: any) {
         console.error('TenderClassifier Gemini error:', err.message);
+        return {
+          deterministic: deterministicResult,
+          ai: {
+            status: 'FAILED',
+            serviceMatches: [],
+            reason: `Gemini execution error: ${err.message}`,
+            model: GeminiClient.getModelForTier(1),
+          },
+          final: {
+            relevance: deterministic.qualification,
+            reason: `Gemini failed; retained via deterministic filter: ${deterministic.matchedKeywords.join(', ')}`,
+            serviceMatches: deterministic.matchedKeywords,
+          },
+        };
       }
     }
 
-    // 3. Truthful fallback when Gemini is unavailable or failed
+    // 3. Truthful fallback when Gemini is unconfigured
     return {
-      relevance: deterministic.qualification,
-      serviceMatches: deterministic.matchedKeywords,
-      reason:
-        deterministic.matchedKeywords.length > 0
-          ? `Deterministic match on creative keywords: ${deterministic.matchedKeywords.join(', ')} (Gemini unconfigured)`
-          : 'Candidate retained for manual review (Gemini unconfigured)',
-      falsePositive: false,
-      confidence: deterministic.score,
+      deterministic: deterministicResult,
+      ai: {
+        status: 'UNCONFIGURED',
+        serviceMatches: [],
+      },
+      final: {
+        relevance: deterministic.qualification,
+        reason:
+          deterministic.matchedKeywords.length > 0
+            ? `Deterministic match on creative keywords: ${deterministic.matchedKeywords.join(', ')} (Gemini unconfigured)`
+            : 'Candidate retained for manual review (Gemini unconfigured)',
+        serviceMatches: deterministic.matchedKeywords,
+      },
     };
   }
 }

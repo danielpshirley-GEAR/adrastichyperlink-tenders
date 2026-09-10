@@ -1,18 +1,18 @@
 // src/app/api/tenders/route.ts
 import { NextResponse } from 'next/server';
-import { TendersRepository } from '@/shared/database/repositories/tenders';
+import { getTendersRepository } from '@/shared/database/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   try {
+    const tendersRepo = getTendersRepository();
     const { searchParams } = new URL(req.url);
     const tab = searchParams.get('tab') || 'ALL';
-    const qualification = searchParams.get('qualification') as any;
 
     const [tenders, counts] = await Promise.all([
-      TendersRepository.getAll({ tab, qualification }),
-      TendersRepository.countByTab(),
+      tendersRepo.getAll(tab),
+      tendersRepo.countByTab(),
     ]);
 
     return NextResponse.json({

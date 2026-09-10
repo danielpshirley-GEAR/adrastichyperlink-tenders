@@ -13,6 +13,14 @@ export class SqliteApplicationsRepository implements IApplicationsRepository {
     return ApplicationsRepository.getById(id);
   }
 
+  async getByTenderId(tenderId: string): Promise<TenderApplication | null> {
+    return ApplicationsRepository.getByTenderId(tenderId);
+  }
+
+  async createShellForTender(tenderId: string): Promise<TenderApplication> {
+    return ApplicationsRepository.createShellForTender(tenderId);
+  }
+
   async createFromTender(tenderId: string): Promise<TenderApplication> {
     return ApplicationsRepository.createShellForTender(tenderId);
   }

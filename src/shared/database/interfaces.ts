@@ -47,7 +47,7 @@ export interface ISourcesRepository {
     finalRedirectUrl: string | null,
     notes: string | null
   ): Promise<void>;
-  linkSourceNoticesToTender(tenderId: string, noticeId: string, ocid?: string): Promise<void>;
+  linkSourceNoticesToTender(sourceId: string, tenderId: string, noticeId: string, ocid?: string): Promise<void>;
 }
 
 export interface IBuyersRepository {
@@ -57,5 +57,7 @@ export interface IBuyersRepository {
 export interface IApplicationsRepository {
   getAll(): Promise<any[]>;
   getById(id: string): Promise<any | null>;
+  getByTenderId(tenderId: string): Promise<any | null>;
   createFromTender(tenderId: string): Promise<any>;
+  createShellForTender(tenderId: string): Promise<any>;
 }

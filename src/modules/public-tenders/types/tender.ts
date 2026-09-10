@@ -41,6 +41,7 @@ export interface TenderSummary {
   title: string;
   plainEnglishSummary: string;
   buyerName: string;
+  buyerId?: string;
   buyerType: string;
   valueAmount?: number;
   valueCurrency: string;

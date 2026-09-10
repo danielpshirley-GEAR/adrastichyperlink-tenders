@@ -288,9 +288,17 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       updated_at: now,
     };
 
-    if (stats?.successful) {
+    if (status === 'healthy' && stats?.successful) {
       updatePayload.last_successful_scan_at = now;
       updatePayload.last_scan_error = null;
+    } else if (status === 'degraded') {
+      // Degraded retains error reason even if partial success occurred
+      if (stats?.lastScanError !== undefined) {
+        updatePayload.last_scan_error = stats.lastScanError;
+      }
+      if (stats?.successful) {
+        updatePayload.last_successful_scan_at = now;
+      }
     } else if (stats?.lastScanError !== undefined) {
       updatePayload.last_scan_error = stats.lastScanError;
     }
@@ -412,11 +420,18 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
     });
   }
 
-  async linkSourceNoticesToTender(tenderId: string, noticeId: string, ocid?: string): Promise<void> {
-    let query = this.client.from('source_notices').update({ tender_id: tenderId }).eq('notice_id', noticeId);
-    await query;
+  async linkSourceNoticesToTender(sourceId: string, tenderId: string, noticeId: string, ocid?: string): Promise<void> {
+    await this.client
+      .from('source_notices')
+      .update({ tender_id: tenderId })
+      .eq('source_id', sourceId)
+      .eq('notice_id', noticeId);
     if (ocid) {
-      await this.client.from('source_notices').update({ tender_id: tenderId }).eq('ocid', ocid);
+      await this.client
+        .from('source_notices')
+        .update({ tender_id: tenderId })
+        .eq('source_id', sourceId)
+        .eq('ocid', ocid);
     }
   }
 }
@@ -468,6 +483,16 @@ export class SupabaseApplicationsRepository implements IApplicationsRepository {
     const { data, error } = await this.client.from('applications').select('*').eq('id', id).maybeSingle();
     if (error || !data) return null;
     return data;
+  }
+
+  async getByTenderId(tenderId: string): Promise<any | null> {
+    const { data, error } = await this.client.from('applications').select('*').eq('tender_id', tenderId).maybeSingle();
+    if (error || !data) return null;
+    return data;
+  }
+
+  async createShellForTender(tenderId: string): Promise<any> {
+    return this.createFromTender(tenderId);
   }
 
   async createFromTender(tenderId: string): Promise<any> {

@@ -12,3 +12,4 @@ out
 .env.*.local
 scratch_test.png
 .DS_Store
+*.tsbuildinfo

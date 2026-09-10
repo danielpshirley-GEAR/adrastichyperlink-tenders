@@ -171,6 +171,9 @@ export class FindATenderConnector implements ProcurementConnector {
     }
 
     const durationMs = Date.now() - startTime;
+    const nextCursorPresent = Boolean(currentUrl);
+    const truncatedBySafetyLimit = Boolean(currentUrl && (pagesFetched >= maxPages || candidates.length >= safetyLimitNotices));
+    const paginationComplete = !currentUrl;
 
     return {
       sourceId: this.id,
@@ -182,6 +185,9 @@ export class FindATenderConnector implements ProcurementConnector {
       durationMs,
       relevantCandidates: candidates,
       errors,
+      paginationComplete,
+      truncatedBySafetyLimit,
+      nextCursorPresent,
     };
   }
 

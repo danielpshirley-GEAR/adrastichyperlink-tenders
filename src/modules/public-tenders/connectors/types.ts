@@ -52,6 +52,9 @@ export interface ScanResult {
   durationMs: number;
   relevantCandidates: RawNoticeRecord[];
   errors: string[];
+  paginationComplete?: boolean;
+  truncatedBySafetyLimit?: boolean;
+  nextCursorPresent?: boolean;
 }
 
 export interface ProcurementConnector {

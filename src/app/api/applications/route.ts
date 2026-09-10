@@ -1,12 +1,13 @@
 // src/app/api/applications/route.ts
 import { NextResponse } from 'next/server';
-import { ApplicationsRepository } from '@/shared/database/repositories/applications';
+import { getApplicationsRepository } from '@/shared/database/db';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const applications = await ApplicationsRepository.getAll();
+    const applicationsRepo = getApplicationsRepository();
+    const applications = await applicationsRepo.getAll();
     return NextResponse.json({
       total: applications.length,
       applications,

@@ -1,6 +1,6 @@
 -- ==============================================================================
--- ADRASTICHYPERLINK PUBLIC TENDER ENGINE — CANONICAL POSTGRESQL / SUPABASE SCHEMA
--- Master Production Schema (Synchronized with supabase/migrations/20260910_initial_production_schema.sql)
+-- ADRASTICHYPERLINK PUBLIC TENDER ENGINE — CANONICAL SUPABASE / POSTGRESQL SCHEMA
+-- Migration: 20260910_initial_production_schema.sql
 -- ==============================================================================
 
 -- Enable UUID extension

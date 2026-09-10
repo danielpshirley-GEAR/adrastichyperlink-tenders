@@ -9,7 +9,8 @@
     "screenshots": "python3 scripts/capture_screenshots.py",
     "deploy:review": "npm run build && npx wrangler pages deploy out --project-name adrastichyperlink-tenders --branch main",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "npx tsx scripts/test_unit.ts"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",
