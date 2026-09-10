@@ -1,0 +1,27 @@
+{
+  "environment": "public-review",
+  "buildId": "rev-2026.09.10-v1",
+  "deployedAt": "2026-09-10T00:19:56.916912+00:00",
+  "routes": [
+    "index.html",
+    "today.html",
+    "tenders.html",
+    "tender-detail.html",
+    "applications.html",
+    "application-detail.html",
+    "scan.html",
+    "knowledge.html",
+    "settings.html",
+    "content.html",
+    "manifest.json"
+  ],
+  "screenshots": [
+    "screenshots/today.png",
+    "screenshots/tenders.png",
+    "screenshots/tender-detail.png",
+    "screenshots/applications.png",
+    "screenshots/application-detail.png",
+    "screenshots/scan.png",
+    "screenshots/knowledge.png"
+  ]
+}
