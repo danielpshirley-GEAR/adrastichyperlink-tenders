@@ -52,13 +52,14 @@ export function TendersInboxView({
 
   // Client-side strict filter guarantee
   const filteredTenders = tenders.filter((t) => {
-    if (activeTab === 'ALL') return !t.isArchived;
-    if (activeTab === 'STRONG') return t.qualification === 'STRONG' && !t.isArchived;
-    if (activeTab === 'POSSIBLE') return t.qualification === 'POSSIBLE' && !t.isArchived;
-    if (activeTab === 'BID') return t.bidDecisionState === 'BID' && !t.isArchived;
-    if (activeTab === 'WATCH') return t.bidDecisionState === 'WATCH' && !t.isArchived;
-    if (activeTab === 'PASSED') return t.bidDecisionState === 'PASS' && !t.isArchived;
-    if (activeTab === 'ARCHIVED') return t.isArchived;
+    const isArchived = t.isArchived || t.lifecycleStatus === 'EXPIRED' || t.lifecycleStatus === 'REJECTED' || t.qualification === 'REJECT';
+    if (activeTab === 'ALL') return !isArchived;
+    if (activeTab === 'STRONG') return t.qualification === 'STRONG' && !isArchived;
+    if (activeTab === 'POSSIBLE') return t.qualification === 'POSSIBLE' && !isArchived;
+    if (activeTab === 'BID') return t.bidDecisionState === 'BID' && !isArchived;
+    if (activeTab === 'WATCH') return t.bidDecisionState === 'WATCH' && !isArchived;
+    if (activeTab === 'PASSED') return t.bidDecisionState === 'PASS' && !isArchived;
+    if (activeTab === 'ARCHIVED') return isArchived;
     return true;
   });
 

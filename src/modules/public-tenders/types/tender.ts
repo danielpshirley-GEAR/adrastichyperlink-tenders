@@ -55,13 +55,14 @@ export interface TenderSummary {
   deterministicResult?: Qualification;
   aiResult?: Qualification | 'NOT_RUN' | 'UNAVAILABLE';
   finalQualification?: Qualification;
-  lifecycleStatus?: 'ACTIVE' | 'EXPIRED' | 'AWARDED' | 'WITHDRAWN';
+  lifecycleStatus?: 'ACTIVE' | 'EXPIRED' | 'AWARDED' | 'WITHDRAWN' | 'REJECTED';
   verificationGrade: VerificationGrade;
   officialNoticeUrl: string;
   applicationPortalUrl?: string;
   serviceTags: ServiceTaxonomy[];
   sourceId: string;
   isArchived: boolean;
+  archivedReason?: 'AI_REJECTED' | 'EXPIRED' | 'MANUAL' | string | null;
   discoveredAt: string;
   lastVerifiedAt: string;
   bidDecisionState?: BidDecisionType | 'UNDECIDED';

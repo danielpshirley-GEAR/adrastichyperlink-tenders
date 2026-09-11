@@ -49,25 +49,27 @@ export class TendersRepository {
     if (filter?.tab) {
       const tab = filter.tab.toUpperCase();
       if (tab === 'STRONG') {
-        query += ' AND qualification = ? AND is_archived = 0';
-        params.push('STRONG');
+        query += ' AND qualification = ? AND is_archived = 0 AND lifecycle_status = ?';
+        params.push('STRONG', 'ACTIVE');
       } else if (tab === 'POSSIBLE') {
-        query += ' AND qualification = ? AND is_archived = 0';
-        params.push('POSSIBLE');
+        query += ' AND qualification = ? AND is_archived = 0 AND lifecycle_status = ?';
+        params.push('POSSIBLE', 'ACTIVE');
       } else if (tab === 'BID') {
-        query += ' AND bid_decision_state = ? AND is_archived = 0';
-        params.push('BID');
+        query += ' AND bid_decision_state = ? AND is_archived = 0 AND lifecycle_status = ? AND qualification != ?';
+        params.push('BID', 'ACTIVE', 'REJECT');
       } else if (tab === 'WATCH') {
-        query += ' AND bid_decision_state = ? AND is_archived = 0';
-        params.push('WATCH');
+        query += ' AND bid_decision_state = ? AND is_archived = 0 AND lifecycle_status = ? AND qualification != ?';
+        params.push('WATCH', 'ACTIVE', 'REJECT');
       } else if (tab === 'PASSED') {
-        query += ' AND bid_decision_state = ? AND is_archived = 0';
-        params.push('PASS');
+        query += ' AND bid_decision_state = ? AND is_archived = 0 AND lifecycle_status = ? AND qualification != ?';
+        params.push('PASS', 'ACTIVE', 'REJECT');
       } else if (tab === 'ARCHIVED') {
-        query += ' AND is_archived = 1';
+        query += ' AND (is_archived = 1 OR lifecycle_status IN (?, ?) OR qualification = ?)';
+        params.push('EXPIRED', 'REJECTED', 'REJECT');
       } else {
-        // ALL tab: active only
-        query += ' AND is_archived = 0';
+        // ALL tab: strictly CURRENT ACTIONABLE OPPORTUNITIES ONLY
+        query += ' AND is_archived = 0 AND lifecycle_status = ? AND qualification != ?';
+        params.push('ACTIVE', 'REJECT');
       }
     } else {
       if (filter?.isArchived !== undefined) {
@@ -165,13 +167,32 @@ export class TendersRepository {
         ? new Date(submissionDeadline).getTime() < Date.now()
         : false;
 
-    const lifecycleStatus = isPastDeadline ? 'EXPIRED' : (tender.lifecycleStatus || existing?.lifecycle_status || 'ACTIVE');
-    const isArchived = isPastDeadline ? 1 : (tender.isArchived !== undefined ? (tender.isArchived ? 1 : 0) : (existing?.is_archived ?? 0));
+    const isRejected = (tender.finalQualification === 'REJECT' || tender.qualification === 'REJECT' || existing?.final_qualification === 'REJECT' || existing?.qualification === 'REJECT');
 
-    const qualification = tender.qualification || existing?.qualification || 'POSSIBLE';
+    let lifecycleStatus = 'ACTIVE';
+    if (isPastDeadline) {
+      lifecycleStatus = 'EXPIRED';
+    } else if (isRejected) {
+      lifecycleStatus = 'REJECTED';
+    } else {
+      lifecycleStatus = tender.lifecycleStatus || existing?.lifecycle_status || 'ACTIVE';
+    }
+
+    const isArchived = (isPastDeadline || isRejected)
+      ? 1
+      : (tender.isArchived !== undefined ? (tender.isArchived ? 1 : 0) : (existing?.is_archived ?? 0));
+
+    let archivedReason = (tender as any).archivedReason !== undefined ? (tender as any).archivedReason : (existing?.archived_reason ?? null);
+    if (isPastDeadline && !archivedReason) {
+      archivedReason = 'EXPIRED';
+    } else if (isRejected && !archivedReason) {
+      archivedReason = 'AI_REJECTED';
+    }
+
+    const qualification = isRejected ? 'REJECT' : (tender.qualification || existing?.qualification || 'POSSIBLE');
     const deterministicResult = tender.deterministicResult ?? existing?.deterministic_result ?? null;
     const aiResult = tender.aiResult ?? existing?.ai_result ?? null;
-    const finalQualification = tender.finalQualification ?? existing?.final_qualification ?? qualification;
+    const finalQualification = isRejected ? 'REJECT' : (tender.finalQualification ?? existing?.final_qualification ?? qualification);
 
     const verificationGrade = tender.verificationGrade || existing?.verification_grade || 'D';
     const officialNoticeUrl = tender.officialNoticeUrl || existing?.official_notice_url || '';
@@ -190,7 +211,7 @@ export class TendersRepository {
           submission_deadline = ?, clarification_deadline = ?, contract_start_at = ?, contract_end_at = ?,
           last_verified_at = ?, qualification = ?, deterministic_result = ?, ai_result = ?,
           final_qualification = ?, lifecycle_status = ?, verification_grade = ?, official_notice_url = ?,
-          application_portal_url = ?, service_tags = ?, is_archived = ?, bid_decision_state = ?,
+          application_portal_url = ?, service_tags = ?, is_archived = ?, archived_reason = ?, bid_decision_state = ?,
           evaluation_criteria = ?, requirements = ?, documents = ?, updated_at = ?
         WHERE id = ?
       `).run(
@@ -199,7 +220,7 @@ export class TendersRepository {
         submissionDeadline, clarificationDeadline, contractStartAt, contractEndAt,
         now, qualification, deterministicResult, aiResult,
         finalQualification, lifecycleStatus, verificationGrade, officialNoticeUrl,
-        applicationPortalUrl, serviceTags, isArchived, bidDecisionState,
+        applicationPortalUrl, serviceTags, isArchived, archivedReason, bidDecisionState,
         evaluationCriteria, requirements, documents, now,
         id
       );
@@ -212,7 +233,7 @@ export class TendersRepository {
           contract_start_at, contract_end_at, discovered_at, last_verified_at,
           qualification, deterministic_result, ai_result, final_qualification,
           lifecycle_status, verification_grade, official_notice_url, application_portal_url,
-          service_tags, is_archived, bid_decision_state, evaluation_criteria,
+          service_tags, is_archived, archived_reason, bid_decision_state, evaluation_criteria,
           requirements, documents, created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?,
@@ -221,7 +242,7 @@ export class TendersRepository {
           ?, ?, ?, ?,
           ?, ?, ?, ?,
           ?, ?, ?, ?,
-          ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
           ?, ?, ?, ?
         )
       `).run(
@@ -231,7 +252,7 @@ export class TendersRepository {
         contractStartAt, contractEndAt, now, now,
         qualification, deterministicResult, aiResult, finalQualification,
         lifecycleStatus, verificationGrade, officialNoticeUrl, applicationPortalUrl,
-        serviceTags, isArchived, bidDecisionState, evaluationCriteria,
+        serviceTags, isArchived, archivedReason, bidDecisionState, evaluationCriteria,
         requirements, documents, now, now
       );
     }
@@ -289,21 +310,24 @@ export class TendersRepository {
       SELECT
         is_archived,
         qualification,
+        lifecycle_status,
         bid_decision_state
       FROM tenders
     `).all() as any[];
 
     for (const r of rows) {
-      if (r.is_archived === 1) {
+      const isArchived = r.is_archived === 1 || r.lifecycle_status === 'EXPIRED' || r.lifecycle_status === 'REJECTED' || r.qualification === 'REJECT';
+
+      if (isArchived) {
         counts.ARCHIVED++;
       } else {
         counts.ALL++;
         if (r.qualification === 'STRONG') counts.STRONG++;
         if (r.qualification === 'POSSIBLE') counts.POSSIBLE++;
+        if (r.bid_decision_state === 'BID') counts.BID++;
+        if (r.bid_decision_state === 'WATCH') counts.WATCH++;
+        if (r.bid_decision_state === 'PASS') counts.PASSED++;
       }
-      if (r.bid_decision_state === 'BID') counts.BID++;
-      if (r.bid_decision_state === 'WATCH') counts.WATCH++;
-      if (r.bid_decision_state === 'PASS') counts.PASSED++;
     }
 
     return counts;
@@ -347,6 +371,7 @@ function mapRowToTender(row: any): TenderSummary {
     serviceTags: row.service_tags ? JSON.parse(row.service_tags) : [],
     sourceId: 'find_a_tender',
     isArchived: Boolean(row.is_archived),
+    archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
     discoveredAt: row.discovered_at,
     lastVerifiedAt: row.last_verified_at,
     bidDecisionState: row.bid_decision_state || 'UNDECIDED',

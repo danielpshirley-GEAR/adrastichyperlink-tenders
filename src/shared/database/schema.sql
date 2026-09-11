@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS tenders (
     application_portal_url TEXT,
     service_tags TEXT[] DEFAULT ARRAY[]::TEXT[],
     is_archived BOOLEAN NOT NULL DEFAULT false,
+    archived_reason VARCHAR(64),
     bid_decision_state VARCHAR(32) NOT NULL DEFAULT 'UNDECIDED',
     evaluation_criteria JSONB DEFAULT '[]'::jsonb,
     requirements JSONB DEFAULT '[]'::jsonb,

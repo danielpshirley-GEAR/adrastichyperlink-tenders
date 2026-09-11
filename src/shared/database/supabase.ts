@@ -28,8 +28,25 @@ export function getSupabaseClient(): SupabaseClient | null {
     supabaseClientInstance = createClient(url, key, {
       auth: { persistSession: false },
     });
+    // Auto-heal legacy rejected records to ensure database-level consistency
+    healLegacyRejectedTenders(supabaseClientInstance);
   }
   return supabaseClientInstance;
+}
+
+async function healLegacyRejectedTenders(client: SupabaseClient) {
+  try {
+    await client
+      .from('tenders')
+      .update({
+        lifecycle_status: 'REJECTED',
+        is_archived: true,
+      })
+      .or('qualification.eq.REJECT,final_qualification.eq.REJECT')
+      .eq('is_archived', false);
+  } catch {
+    // Non-blocking background heal
+  }
 }
 
 export class SupabaseTendersRepository implements ITendersRepository {
@@ -42,17 +59,32 @@ export class SupabaseTendersRepository implements ITendersRepository {
   async getAll(tab?: string, options?: { limit?: number; offset?: number }): Promise<TenderSummary[]> {
     let query = this.client.from('tenders').select('*');
 
-    if (tab && tab !== 'ALL') {
-      if (tab === 'STRONG' || tab === 'POSSIBLE') {
-        query = query.eq('qualification', tab).eq('is_archived', false);
-      } else if (tab === 'BID' || tab === 'WATCH' || tab === 'PASSED') {
-        const state = tab === 'PASSED' ? 'PASS' : tab;
-        query = query.eq('bid_decision_state', state);
-      } else if (tab === 'ARCHIVED') {
-        query = query.eq('is_archived', true);
-      }
-    } else {
-      query = query.eq('is_archived', false);
+    const activeTab = (tab || 'ALL').toUpperCase();
+
+    if (activeTab === 'ALL') {
+      // CURRENT ACTIONABLE OPPORTUNITIES ONLY:
+      // Excludes isArchived = true, lifecycle_status IN ('EXPIRED', 'REJECTED'), qualification = 'REJECT'
+      query = query
+        .eq('is_archived', false)
+        .neq('qualification', 'REJECT')
+        .neq('lifecycle_status', 'EXPIRED')
+        .neq('lifecycle_status', 'REJECTED');
+    } else if (activeTab === 'STRONG' || activeTab === 'POSSIBLE') {
+      query = query
+        .eq('qualification', activeTab)
+        .eq('is_archived', false)
+        .neq('lifecycle_status', 'EXPIRED')
+        .neq('lifecycle_status', 'REJECTED');
+    } else if (activeTab === 'BID' || activeTab === 'WATCH' || activeTab === 'PASSED') {
+      const state = activeTab === 'PASSED' ? 'PASS' : activeTab;
+      query = query
+        .eq('bid_decision_state', state)
+        .eq('is_archived', false)
+        .neq('qualification', 'REJECT')
+        .neq('lifecycle_status', 'EXPIRED')
+        .neq('lifecycle_status', 'REJECTED');
+    } else if (activeTab === 'ARCHIVED') {
+      query = query.or('is_archived.eq.true,lifecycle_status.eq.EXPIRED,lifecycle_status.eq.REJECTED,qualification.eq.REJECT');
     }
 
     query = query.order('discovered_at', { ascending: false });
@@ -111,8 +143,32 @@ export class SupabaseTendersRepository implements ITendersRepository {
         ? new Date(tender.submissionDeadline).getTime() < Date.now()
         : false;
 
-    const lifecycleStatus = isPastDeadline ? 'EXPIRED' : (tender.lifecycleStatus || existing?.lifecycleStatus || 'ACTIVE');
-    const isArchived = isPastDeadline || (tender.isArchived ?? existing?.isArchived ?? false);
+    const isRejected = (tender.finalQualification === 'REJECT' || tender.qualification === 'REJECT' || existing?.finalQualification === 'REJECT' || existing?.qualification === 'REJECT');
+
+    let lifecycleStatus = 'ACTIVE';
+    if (isPastDeadline) {
+      lifecycleStatus = 'EXPIRED';
+    } else if (isRejected) {
+      lifecycleStatus = 'REJECTED';
+    } else {
+      lifecycleStatus = tender.lifecycleStatus || existing?.lifecycleStatus || 'ACTIVE';
+    }
+
+    const isArchived = (isPastDeadline || isRejected)
+      ? true
+      : (tender.isArchived !== undefined ? Boolean(tender.isArchived) : (existing?.isArchived ?? false));
+
+    let archivedReason = (tender as any).archivedReason !== undefined ? (tender as any).archivedReason : ((existing as any)?.archivedReason ?? null);
+    if (isPastDeadline && !archivedReason) {
+      archivedReason = 'EXPIRED';
+    } else if (isRejected && !archivedReason) {
+      archivedReason = 'AI_REJECTED';
+    }
+
+    const qualification = isRejected ? 'REJECT' : (tender.qualification || existing?.qualification || 'POSSIBLE');
+    const deterministicResult = tender.deterministicResult ?? existing?.deterministicResult ?? null;
+    const aiResult = tender.aiResult ?? existing?.aiResult ?? null;
+    const finalQualification = isRejected ? 'REJECT' : (tender.finalQualification ?? existing?.finalQualification ?? qualification);
 
     // Identity preservation: when found by OCID, preserve original canonical_reference
     const canonicalReference = existing ? existing.canonicalReference : tender.canonicalReference;
@@ -134,10 +190,10 @@ export class SupabaseTendersRepository implements ITendersRepository {
       published_at: tender.publishedAt !== undefined ? tender.publishedAt : (existing?.publishedAt ?? null),
       submission_deadline: tender.submissionDeadline !== undefined ? tender.submissionDeadline : (existing?.submissionDeadline ?? null),
       clarification_deadline: tender.clarificationDeadline !== undefined ? tender.clarificationDeadline : (existing?.clarificationDeadline ?? null),
-      qualification: tender.qualification || existing?.qualification || 'POSSIBLE',
-      deterministic_result: tender.deterministicResult ?? existing?.deterministicResult ?? null,
-      ai_result: tender.aiResult ?? existing?.aiResult ?? null,
-      final_qualification: tender.finalQualification ?? existing?.finalQualification ?? tender.qualification ?? 'POSSIBLE',
+      qualification,
+      deterministic_result: deterministicResult,
+      ai_result: aiResult,
+      final_qualification: finalQualification,
       lifecycle_status: lifecycleStatus,
       verification_grade: tender.verificationGrade || existing?.verificationGrade || 'D',
       official_notice_url: tender.officialNoticeUrl || existing?.officialNoticeUrl || '',
@@ -148,17 +204,29 @@ export class SupabaseTendersRepository implements ITendersRepository {
       updated_at: now,
     };
 
+    if (archivedReason) {
+      payload.archived_reason = archivedReason;
+    }
+
     if (!existing) {
       payload.discovered_at = now;
       payload.last_verified_at = now;
-      const { data, error } = await this.client.from('tenders').insert(payload).select().single();
-      if (error) throw new Error(`Failed to insert tender: ${error.message}`);
-      return this.mapRow(data);
+      let res = await this.client.from('tenders').insert(payload).select().single();
+      if (res.error && res.error.message.includes('archived_reason')) {
+        delete payload.archived_reason;
+        res = await this.client.from('tenders').insert(payload).select().single();
+      }
+      if (res.error) throw new Error(`Failed to insert tender: ${res.error.message}`);
+      return this.mapRow(res.data);
     } else {
       payload.last_verified_at = now;
-      const { data, error } = await this.client.from('tenders').update(payload).eq('id', id).select().single();
-      if (error) throw new Error(`Failed to update tender: ${error.message}`);
-      return this.mapRow(data);
+      let res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
+      if (res.error && res.error.message.includes('archived_reason')) {
+        delete payload.archived_reason;
+        res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
+      }
+      if (res.error) throw new Error(`Failed to update tender: ${res.error.message}`);
+      return this.mapRow(res.data);
     }
   }
 
@@ -191,23 +259,25 @@ export class SupabaseTendersRepository implements ITendersRepository {
   }
 
   async countByTab(): Promise<Record<string, number>> {
-    const { data, error } = await this.client.from('tenders').select('qualification, bid_decision_state, is_archived');
+    const { data, error } = await this.client.from('tenders').select('qualification, bid_decision_state, is_archived, lifecycle_status');
     if (error) {
       throw new Error(`Failed to count tenders: ${error.message}`);
     }
 
     const counts = { ALL: 0, STRONG: 0, POSSIBLE: 0, BID: 0, WATCH: 0, PASSED: 0, ARCHIVED: 0 };
     for (const r of data || []) {
-      if (r.is_archived) {
+      const isArchived = Boolean(r.is_archived) || r.lifecycle_status === 'EXPIRED' || r.lifecycle_status === 'REJECTED' || r.qualification === 'REJECT';
+
+      if (isArchived) {
         counts.ARCHIVED++;
       } else {
         counts.ALL++;
         if (r.qualification === 'STRONG') counts.STRONG++;
         if (r.qualification === 'POSSIBLE') counts.POSSIBLE++;
+        if (r.bid_decision_state === 'BID') counts.BID++;
+        if (r.bid_decision_state === 'WATCH') counts.WATCH++;
+        if (r.bid_decision_state === 'PASS') counts.PASSED++;
       }
-      if (r.bid_decision_state === 'BID') counts.BID++;
-      if (r.bid_decision_state === 'WATCH') counts.WATCH++;
-      if (r.bid_decision_state === 'PASS') counts.PASSED++;
     }
     return counts;
   }
@@ -249,6 +319,7 @@ export class SupabaseTendersRepository implements ITendersRepository {
       serviceTags: Array.isArray(row.service_tags) ? row.service_tags : [],
       sourceId: 'find_a_tender',
       isArchived: Boolean(row.is_archived),
+      archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
       discoveredAt: row.discovered_at,
       lastVerifiedAt: row.last_verified_at,
       bidDecisionState: row.bid_decision_state || 'UNDECIDED',

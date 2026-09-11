@@ -164,6 +164,11 @@ export async function POST(req: Request) {
 
         const isNewTender = !existingTender;
 
+        const isRejected = classification.final.relevance === 'REJECT';
+        const lifecycleStatus = isExpired ? 'EXPIRED' : (isRejected ? 'REJECTED' : 'ACTIVE');
+        const isArchived = isExpired || isRejected;
+        const archivedReason = isExpired ? 'EXPIRED' : (isRejected ? 'AI_REJECTED' : null);
+
         // 7. Save canonical tender with separated classification results
         const saved = await tendersRepo.save({
           id: existingTender?.id,
@@ -181,16 +186,17 @@ export async function POST(req: Request) {
           publishedAt: candidate.publishedAt || null,
           submissionDeadline: candidate.submissionDeadline || null,
           clarificationDeadline: candidate.clarificationDeadline || null,
-          qualification: classification.final.relevance as any,
+          qualification: isRejected ? 'REJECT' : (classification.final.relevance as any),
           deterministicResult: classification.deterministic.relevance as any,
           aiResult: classification.ai.status === 'RUN' ? (classification.ai.relevance as any) : classification.ai.status,
-          finalQualification: classification.final.relevance as any,
-          lifecycleStatus: isExpired ? 'EXPIRED' : 'ACTIVE',
+          finalQualification: isRejected ? 'REJECT' : (classification.final.relevance as any),
+          lifecycleStatus,
           verificationGrade: verification.grade,
           officialNoticeUrl: candidate.officialNoticeUrl,
           applicationPortalUrl: candidate.applicationPortalUrl,
           serviceTags: classification.final.serviceMatches as any,
-          isArchived: isExpired,
+          isArchived,
+          archivedReason,
         });
 
         if (isNewTender) {
@@ -216,6 +222,7 @@ export async function POST(req: Request) {
 
         if (classification.final.relevance === 'STRONG') strongCount++;
         else if (classification.final.relevance === 'POSSIBLE') possibleCount++;
+        else if (classification.final.relevance === 'REJECT') rejectCount++;
         else weakCount++;
       } catch (err: any) {
         processingErrors++;

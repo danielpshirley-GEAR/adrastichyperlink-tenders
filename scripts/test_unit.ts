@@ -148,6 +148,69 @@ async function runUnitTests() {
     }
   });
 
+  // 8. Reject handling: finalQualification === 'REJECT' sets REJECTED, isArchived, AI_REJECTED
+  await test('Reject handling: finalQualification REJECT sets REJECTED, isArchived true, and excludes from ALL', async () => {
+    const { TendersRepository } = await import('../src/shared/database/repositories/tenders');
+    const testRef = 'TEST-UNIT-REJECT-' + Date.now();
+
+    const saved = await TendersRepository.save({
+      canonicalReference: testRef,
+      title: 'CCTV & Media Buying Unit Test',
+      buyerName: 'Test Buyer Authority',
+      deterministicResult: 'POSSIBLE',
+      aiResult: 'REJECT',
+      finalQualification: 'REJECT',
+      publishedAt: '2026-09-01T00:00:00Z',
+      submissionDeadline: '2026-10-30T00:00:00Z', // Future deadline!
+      officialNoticeUrl: 'https://www.find-tender.service.gov.uk/Notice/' + testRef,
+    });
+
+    assert.strictEqual(saved.qualification, 'REJECT');
+    assert.strictEqual(saved.finalQualification, 'REJECT');
+    assert.strictEqual(saved.lifecycleStatus, 'REJECTED');
+    assert.strictEqual(saved.isArchived, true);
+    assert.strictEqual(saved.archivedReason, 'AI_REJECTED');
+
+    // Query ALL tab: must NOT contain this tender
+    const allTenders = await TendersRepository.getAll({ tab: 'ALL' });
+    assert.ok(!allTenders.some((t) => t.canonicalReference === testRef), 'REJECTED tender must not appear in ALL tab');
+
+    // Query ARCHIVED tab: MUST contain this tender
+    const archivedTenders = await TendersRepository.getAll({ tab: 'ARCHIVED' });
+    assert.ok(archivedTenders.some((t) => t.canonicalReference === testRef), 'REJECTED tender must appear in ARCHIVED tab');
+
+    // Clean up
+    const db = getDb();
+    db.prepare('DELETE FROM tenders WHERE canonical_reference = ?').run(testRef);
+  });
+
+  // 9. Expired tenders excluded from active ALL
+  await test('Expired tenders are excluded from active ALL and appear in ARCHIVED', async () => {
+    const { TendersRepository } = await import('../src/shared/database/repositories/tenders');
+    const testRef = 'TEST-UNIT-EXPIRED-' + Date.now();
+
+    const saved = await TendersRepository.save({
+      canonicalReference: testRef,
+      title: 'Expired Tender Test',
+      buyerName: 'Expired Authority',
+      qualification: 'STRONG',
+      publishedAt: '2026-08-01T00:00:00Z',
+      submissionDeadline: '2026-08-15T00:00:00Z', // Past deadline
+      officialNoticeUrl: 'https://www.find-tender.service.gov.uk/Notice/' + testRef,
+    });
+
+    assert.strictEqual(saved.lifecycleStatus, 'EXPIRED');
+    assert.strictEqual(saved.isArchived, true);
+
+    // Query ALL tab: must NOT contain this tender
+    const allTenders = await TendersRepository.getAll({ tab: 'ALL' });
+    assert.ok(!allTenders.some((t) => t.canonicalReference === testRef), 'EXPIRED tender must not appear in ALL tab');
+
+    // Clean up
+    const db = getDb();
+    db.prepare('DELETE FROM tenders WHERE canonical_reference = ?').run(testRef);
+  });
+
   console.log(`\n====================================================`);
   console.log(`UNIT SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);
   console.log(`====================================================\n`);
