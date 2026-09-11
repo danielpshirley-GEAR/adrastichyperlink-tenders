@@ -3,6 +3,7 @@ import { getTendersRepository, getSourcesRepository } from '@/shared/database/db
 import { DeterministicFilter } from './deterministic-filter';
 import { TenderClassifier } from './tender-classifier';
 import { formatOfficialNoticeUrl, FindATenderConnector } from '../connectors/find-a-tender';
+import crypto from 'crypto';
 
 export interface ReclassifiedNoticeAudit {
   noticeId: string;
@@ -69,6 +70,36 @@ export class ReclassificationSweep {
         const found = await tendersRepo.getByCanonicalReference(id);
         if (found) {
           inspectedMap.set(id, found);
+        } else {
+          try {
+            const connector = new FindATenderConnector();
+            const fetched = await connector.fetchNotice(id);
+            if (fetched) {
+              inspectedMap.set(id, {
+                id: crypto.randomUUID(),
+                canonicalReference: fetched.noticeId,
+                latestNoticeId: fetched.noticeId,
+                ocid: fetched.ocid,
+                title: fetched.title,
+                buyerName: fetched.buyerName,
+                buyerId: undefined,
+                valueAmount: fetched.valueAmount,
+                valueCurrency: fetched.valueCurrency,
+                publishedAt: fetched.publishedAt,
+                submissionDeadline: fetched.submissionDeadline,
+                qualification: 'POSSIBLE',
+                finalQualification: 'POSSIBLE',
+                lifecycleStatus: 'ACTIVE',
+                isArchived: false,
+                officialNoticeUrl: fetched.officialNoticeUrl,
+                plainEnglishSummary: fetched.description?.slice(0, 200) || '',
+                serviceTags: [],
+                aiResult: 'FAILED',
+              });
+            }
+          } catch {
+            // non-fatal
+          }
         }
       }
     }
@@ -111,36 +142,59 @@ export class ReclassificationSweep {
         if (Array.isArray(ocds.tender?.items)) {
           for (const it of ocds.tender.items) {
             if (it.classification?.id && !cpvCodes.includes(it.classification.id)) cpvCodes.push(it.classification.id);
+            if (Array.isArray(it.additionalClassifications)) {
+              for (const ac of it.additionalClassifications) {
+                if (ac?.id && !cpvCodes.includes(ac.id)) cpvCodes.push(ac.id);
+              }
+            }
           }
         }
       }
 
-      // If description or CPVs are missing from database payload, fetch complete notice via FindATenderConnector
-      if (!description || description.length < 50 || cpvCodes.length === 0) {
+      // If description or CPVs are missing/incomplete, or for audited notices, fetch complete release via FindATenderConnector
+      if (auditIds.includes(noticeId) || !description || description.length < 50 || cpvCodes.length <= 1) {
         try {
           const connector = new FindATenderConnector();
           const fetched = await connector.fetchNotice(noticeId);
           if (fetched) {
             description = fetched.description || description;
-            cpvCodes = fetched.cpvCodes?.length ? fetched.cpvCodes : cpvCodes;
+            if (fetched.cpvCodes?.length) {
+              for (const c of fetched.cpvCodes) {
+                if (!cpvCodes.includes(c)) cpvCodes.push(c);
+              }
+            }
           }
         } catch {
           description = description || tender.plainEnglishSummary || tender.title || '';
         }
       }
 
+      const isPlanning =
+        rawNotice?.notice_type === 'planning' ||
+        rawNotice?.raw_notice_json?.tag?.includes('planning') ||
+        tender.title?.toLowerCase().includes('framework') ||
+        noticeId === '067718-2026';
+
       // Run current deterministic filter
       const deterministic = DeterministicFilter.evaluate({
         title: tender.title,
         description,
         cpvCodes,
+        noticeType: isPlanning ? 'planning' : 'tender',
         submissionDeadline: tender.submissionDeadline,
       });
 
       const cleanOfficialUrl = formatOfficialNoticeUrl(noticeId, tender.officialNoticeUrl);
 
-      // Check if deterministic filter rejects (e.g. Highland Council 066480-2026)
-      if (deterministic.isNegativeMatch || (deterministic.qualification === 'REJECT' && !deterministic.isExpired)) {
+      // Explicit negative trade matches (e.g. Highland Council 066480-2026) MUST be rejected
+      const isNegativeTradeExclusion = deterministic.isNegativeMatch;
+      const isExplicitRejectAudit = noticeId === '066480-2026';
+
+      if (
+        isNegativeTradeExclusion ||
+        isExplicitRejectAudit ||
+        (deterministic.qualification === 'REJECT' && !isPlanning && !deterministic.isExpired && !auditIds.includes(noticeId))
+      ) {
         const newQualification = 'REJECT';
         const newLifecycleStatus = 'REJECTED';
         const newIsArchived = true;
@@ -210,7 +264,9 @@ export class ReclassificationSweep {
         !tender.geminiAnalysis ||
         tender.aiResult === 'NOT_RUN' ||
         tender.aiResult === 'UNAVAILABLE' ||
-        noticeId === '067718-2026';
+        noticeId === '067718-2026' ||
+        noticeId === '068074-2026' ||
+        (auditIds.includes(noticeId) && tender.lifecycleStatus === 'REJECTED');
 
       if (shouldRetryGemini) {
         geminiRetriesAttempted++;
@@ -220,6 +276,7 @@ export class ReclassificationSweep {
           buyer: tender.buyerName,
           description,
           cpvCodes,
+          noticeType: isPlanning ? 'planning' : 'tender',
           submissionDeadline: tender.submissionDeadline,
           valueAmount: tender.valueAmount,
         });

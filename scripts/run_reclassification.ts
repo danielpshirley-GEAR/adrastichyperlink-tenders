@@ -29,7 +29,7 @@ async function triggerReclassification() {
 }
 
 async function queryTendersTab(tab: string) {
-  const url = `${PROD_BASE_URL}/api/tenders?tab=${tab}`;
+  const url = `${PROD_BASE_URL}/api/tenders?tab=${tab}&_t=${Date.now()}`;
   const response = await fetch(url, {
     headers: {
       Cookie: AUTH_COOKIE,

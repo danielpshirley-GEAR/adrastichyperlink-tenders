@@ -27,6 +27,9 @@ export function getSupabaseClient(): SupabaseClient | null {
       : (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)!;
     supabaseClientInstance = createClient(url, key, {
       auth: { persistSession: false },
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }),
+      },
     });
     // Auto-heal legacy rejected records to ensure database-level consistency
     healLegacyRejectedTenders(supabaseClientInstance);
@@ -104,7 +107,13 @@ export class SupabaseTendersRepository implements ITendersRepository {
   }
 
   async getByCanonicalReference(ref: string): Promise<TenderSummary | null> {
-    const { data, error } = await this.client.from('tenders').select('*').eq('canonical_reference', ref).maybeSingle();
+    const { data, error } = await this.client
+      .from('tenders')
+      .select('*')
+      .or(`canonical_reference.eq.${ref},latest_notice_id.eq.${ref}`)
+      .order('discovered_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (error) throw new Error(`Failed to get tender by reference: ${error.message}`);
     if (!data) return null;
     return this.mapRow(data);
@@ -208,13 +217,10 @@ export class SupabaseTendersRepository implements ITendersRepository {
       application_portal_url: tender.applicationPortalUrl ?? existing?.applicationPortalUrl ?? null,
       service_tags: tender.serviceTags || existing?.serviceTags || [],
       is_archived: isArchived,
+      archived_reason: isArchived ? (archivedReason || 'AI_REJECTED') : null,
       bid_decision_state: tender.bidDecisionState || existing?.bidDecisionState || 'UNDECIDED',
       updated_at: now,
     };
-
-    if (archivedReason) {
-      payload.archived_reason = archivedReason;
-    }
 
     if (!existing) {
       payload.discovered_at = now;

@@ -190,6 +190,9 @@ export class TendersRepository {
     } else if (isRejected && !archivedReason) {
       archivedReason = 'AI_REJECTED';
     }
+    if (!isArchived) {
+      archivedReason = null;
+    }
 
     const qualification = isRejected ? 'REJECT' : (tender.qualification || existing?.qualification || 'POSSIBLE');
     const deterministicResult = tender.deterministicResult ?? existing?.deterministic_result ?? null;
