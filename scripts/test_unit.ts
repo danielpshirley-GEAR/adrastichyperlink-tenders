@@ -246,6 +246,142 @@ async function runUnitTests() {
     assert.notStrictEqual(json.commit, 'c193b1deadef6f63724965081408ae68ac5ba972');
   });
 
+  // 11. Detail Enrichment: Procurement Stage Resolution & Contextual Gate
+  test('DetailEnrichmentService resolves PRELIMINARY MARKET ENGAGEMENT for planning PIN notices', () => {
+    const { DetailEnrichmentService } = require('../src/modules/public-tenders/services/detail-enrichment');
+    const stage = DetailEnrichmentService.determineProcurementStage(
+      { tag: ['planning'], tender: { status: 'planned', communication: { futureNoticeDate: '2026-11-10T00:00:00Z' } } },
+      'Aberdeen Destination Marketing and Development Service',
+      'Prior Information Notice for market engagement only. Not a call for competition.'
+    );
+    assert.strictEqual(stage, 'PRELIMINARY MARKET ENGAGEMENT');
+  });
+
+  // 12. Detail Enrichment: Document Discovery & Access States
+  await test('DetailEnrichmentService discovers documents and tags access states accurately', async () => {
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const service = new DetailEnrichmentService();
+    const mockTender = {
+      id: 'test-tender-enrich-unit',
+      canonicalReference: '068074-2026',
+      title: 'Aberdeen Destination Marketing and Development Service',
+      qualification: 'STRONG' as const,
+      verificationGrade: 'A' as const,
+      officialNoticeUrl: 'https://www.find-tender.service.gov.uk/Notice/068074-2026',
+      serviceTags: [],
+      sourceId: 'find_a_tender',
+      isArchived: false,
+      discoveredAt: new Date().toISOString(),
+      lastVerifiedAt: new Date().toISOString(),
+    };
+
+    const enrichment = await service.enrichTender(mockTender);
+    assert.strictEqual(enrichment.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
+    assert.strictEqual(enrichment.submissionDetails.isOpenForBid, false);
+    assert.strictEqual(enrichment.submissionDetails.isMarketEngagement, true);
+    assert.ok(enrichment.documents.length >= 2, 'Must discover at least official notice and ITT status');
+    assert.ok(enrichment.documents.some((d: any) => d.accessState === 'PUBLIC'), 'Must have PUBLIC official notice');
+    assert.ok(enrichment.documents.some((d: any) => d.accessState === 'NOT PUBLISHED'), 'Must record NOT PUBLISHED for pending ITT');
+    assert.ok(enrichment.requirements.length >= 4, 'Must populate mandatory and baseline eligibility criteria');
+    assert.ok(enrichment.sourceEvidence.length >= 3, 'Must provide source evidence citations');
+  });
+
+  // 13. Repository Parity: Round-trip persistence of rich procurement intelligence
+  await test('Repository persists and retrieves procurement stage, requirements, documents, and enrichment', async () => {
+    const { TendersRepository } = await import('../src/shared/database/repositories/tenders');
+    const testRef = 'TEST-ENRICH-ROUNDTRIP-' + Date.now();
+
+    const saved = await TendersRepository.save({
+      canonicalReference: testRef,
+      title: 'Enrichment Persistence Test',
+      buyerName: 'City Council',
+      qualification: 'STRONG',
+      officialNoticeUrl: 'https://www.find-tender.service.gov.uk/Notice/' + testRef,
+      procurementStage: 'PRELIMINARY MARKET ENGAGEMENT',
+      requirements: [
+        {
+          id: 'req-1',
+          tenderId: 't-1',
+          category: 'insurance',
+          requirementName: 'PI Insurance',
+          buyerRequirementText: '£5m cover',
+          sourceCitation: 'Notice Spec',
+          adrasticCapabilityText: 'Upgradeable upon award',
+          status: 'PASS_WITH_ACTION',
+          mandatory: true,
+        },
+      ],
+      documents: [
+        {
+          id: 'doc-1',
+          fileName: 'Notice Release',
+          docType: 'official_notice',
+          accessState: 'PUBLIC',
+          requiresLogin: false,
+          versionNumber: 1,
+          fileHash: 'HASH123',
+          analysisStatus: 'analyzed',
+          lastCheckedAt: new Date().toISOString(),
+        },
+      ],
+      enrichment: {
+        tenderId: 't-1',
+        canonicalReference: testRef,
+        enrichedAt: new Date().toISOString(),
+        procurementStage: 'PRELIMINARY MARKET ENGAGEMENT',
+        scopeAndSpec: {
+          whatBuyerWants: 'Destination branding and campaign creative',
+          businessObjective: 'Economic growth',
+          requiredServices: ['Branding', 'Motion'],
+          keyDeliverables: ['Brand book', 'Campaign film'],
+          targetAudience: 'Visitors',
+          contractScope: 'City wide',
+          locations: ['Aberdeen'],
+          duration: '3 years',
+          importantDates: [],
+          creativeMarketingDigitalOverlap: ['Motion', 'Branding'],
+          servicesOutsideCoreCapability: ['Physical infrastructure'],
+          isDetailedScopePublished: true,
+        },
+        documents: [],
+        requirements: [],
+        evaluationCriteria: [],
+        submissionDetails: {
+          procurementStage: 'PRELIMINARY MARKET ENGAGEMENT',
+          submissionRoute: 'PCS',
+          buyerContact: {},
+          requiredAttachments: [],
+          participationInstructions: 'Register on PCS',
+          isOpenForBid: false,
+          isMarketEngagement: true,
+        },
+        fitAndRisks: {
+          whyAdrastichyperlinkFits: 'Branding expertise',
+          whyItMayNotFit: 'Prime capacity',
+          riskFactors: [],
+          partneringRecommendation: 'Consortium lead',
+        },
+        sourceEvidence: [],
+      },
+    } as any);
+
+    assert.strictEqual(saved.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
+    assert.strictEqual(saved.requirements?.length, 1);
+    assert.strictEqual(saved.documents?.length, 1);
+    assert.ok(saved.enrichment, 'Enrichment must be returned on save');
+
+    const loaded = await TendersRepository.getByCanonicalReference(testRef);
+    assert.ok(loaded, 'Tender must be found by canonical reference');
+    assert.strictEqual(loaded?.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
+    assert.strictEqual(loaded?.requirements?.length, 1);
+    assert.strictEqual(loaded?.documents?.length, 1);
+    assert.strictEqual(loaded?.enrichment?.scopeAndSpec?.whatBuyerWants, 'Destination branding and campaign creative');
+
+    // Clean up
+    const db = getDb();
+    db.prepare('DELETE FROM tenders WHERE canonical_reference = ?').run(testRef);
+  });
+
   console.log(`\n====================================================`);
   console.log(`UNIT SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);
   console.log(`====================================================\n`);

@@ -219,6 +219,11 @@ export class SupabaseTendersRepository implements ITendersRepository {
       is_archived: isArchived,
       archived_reason: isArchived ? (archivedReason || 'AI_REJECTED') : null,
       bid_decision_state: tender.bidDecisionState || existing?.bidDecisionState || 'UNDECIDED',
+      evaluation_criteria: (tender as any).enrichment
+        ? { criteria: tender.evaluationCriteria || [], enrichment: (tender as any).enrichment }
+        : (tender.evaluationCriteria || (existing as any)?.evaluationCriteria || []),
+      requirements: (tender as any).requirements || (existing as any)?.requirements || [],
+      documents: (tender as any).documents || (existing as any)?.documents || [],
       updated_at: now,
     };
 
@@ -230,6 +235,12 @@ export class SupabaseTendersRepository implements ITendersRepository {
         delete payload.archived_reason;
         res = await this.client.from('tenders').insert(payload).select().single();
       }
+      if (res.error && (res.error.message.includes('evaluation_criteria') || res.error.message.includes('requirements') || res.error.message.includes('documents'))) {
+        delete payload.evaluation_criteria;
+        delete payload.requirements;
+        delete payload.documents;
+        res = await this.client.from('tenders').insert(payload).select().single();
+      }
       if (res.error) throw new Error(`Failed to insert tender: ${res.error.message}`);
       return this.mapRow(res.data);
     } else {
@@ -237,6 +248,12 @@ export class SupabaseTendersRepository implements ITendersRepository {
       let res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
       if (res.error && res.error.message.includes('archived_reason')) {
         delete payload.archived_reason;
+        res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
+      }
+      if (res.error && (res.error.message.includes('evaluation_criteria') || res.error.message.includes('requirements') || res.error.message.includes('documents'))) {
+        delete payload.evaluation_criteria;
+        delete payload.requirements;
+        delete payload.documents;
         res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
       }
       if (res.error) throw new Error(`Failed to update tender: ${res.error.message}`);
@@ -305,6 +322,35 @@ export class SupabaseTendersRepository implements ITendersRepository {
       }
     }
 
+    const parseJson = (v: any, fallback: any = []) => {
+      if (!v) return fallback;
+      if (typeof v === 'string') {
+        try { return JSON.parse(v); } catch { return fallback; }
+      }
+      return v;
+    };
+
+    const rawEvaluationCriteria = parseJson(row.evaluation_criteria, []);
+    let evaluationCriteria: any[] = [];
+    let enrichment: any = undefined;
+
+    if (rawEvaluationCriteria && typeof rawEvaluationCriteria === 'object' && !Array.isArray(rawEvaluationCriteria)) {
+      evaluationCriteria = Array.isArray(rawEvaluationCriteria.criteria) ? rawEvaluationCriteria.criteria : [];
+      enrichment = rawEvaluationCriteria.enrichment || undefined;
+    } else if (Array.isArray(rawEvaluationCriteria)) {
+      evaluationCriteria = rawEvaluationCriteria;
+    }
+
+    const requirements = parseJson(row.requirements, []);
+    const documents = parseJson(row.documents, []);
+
+    // Determine procurement stage
+    const procurementStage = enrichment?.procurementStage || (
+      (row.title?.toLowerCase().includes('prior information') || row.plain_english_summary?.toLowerCase().includes('market engagement') || row.plain_english_summary?.toLowerCase().includes('preliminary market'))
+        ? 'PRELIMINARY MARKET ENGAGEMENT'
+        : 'OPEN TENDER'
+    );
+
     return {
       id: row.id,
       canonicalReference: row.canonical_reference,
@@ -340,9 +386,12 @@ export class SupabaseTendersRepository implements ITendersRepository {
       discoveredAt: row.discovered_at,
       lastVerifiedAt: row.last_verified_at,
       bidDecisionState: row.bid_decision_state || 'UNDECIDED',
-      evaluationCriteria: [],
-      requirements: [],
-      documents: [],
+      procurementStage,
+      description: row.plain_english_summary || '',
+      evaluationCriteria,
+      requirements,
+      documents,
+      enrichment,
     };
   }
 }

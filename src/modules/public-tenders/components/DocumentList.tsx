@@ -43,26 +43,41 @@ export function DocumentList({ documents }: DocumentListProps) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {doc.analysisStatus === 'analyzed' && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-700 font-medium">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                Analyzed
+            {doc.accessState === 'PUBLIC' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-mono font-bold border border-emerald-200">
+                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                PUBLIC
               </span>
             )}
-            {doc.requiresLogin ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-100 text-zinc-600 text-[10px] font-mono border border-zinc-200">
-                <Lock className="w-2.5 h-2.5" />
-                Portal Login Required
+            {doc.accessState === 'LOGIN REQUIRED' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-900 text-[10px] font-mono font-bold border border-amber-300">
+                <Lock className="w-2.5 h-2.5 text-amber-700" />
+                LOGIN REQUIRED
               </span>
-            ) : (
-              <button
-                type="button"
-                className="p-1.5 rounded hover:bg-gallery-surfaceMuted text-gallery-muted hover:text-gallery-charcoal transition-colors"
-                title="Download document"
+            )}
+            {doc.accessState === 'NOT PUBLISHED' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-100 text-zinc-700 text-[10px] font-mono font-bold border border-zinc-300">
+                NOT PUBLISHED
+              </span>
+            )}
+            {doc.accessState === 'BROKEN' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-50 text-red-800 text-[10px] font-mono font-bold border border-red-200">
+                BROKEN
+              </span>
+            )}
+
+            {doc.sourceUrl || doc.downloadUrl ? (
+              <a
+                href={doc.downloadUrl || doc.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 rounded hover:bg-gallery-surfaceMuted text-gallery-muted hover:text-gallery-charcoal transition-colors inline-flex items-center gap-1 text-[11px] font-mono"
+                title="Open / Download document"
               >
                 <Download className="w-3.5 h-3.5" />
-              </button>
-            )}
+                <span className="hidden sm:inline">Open</span>
+              </a>
+            ) : null}
           </div>
         </div>
       ))}

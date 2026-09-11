@@ -69,33 +69,124 @@ export interface TenderSummary {
   discoveredAt: string;
   lastVerifiedAt: string;
   bidDecisionState?: BidDecisionType | 'UNDECIDED';
+  procurementStage?: ProcurementStage;
   description?: string;
-  evaluationCriteria?: Array<{ criterion: string; weightingPercentage: number }>;
+  evaluationCriteria?: Array<{ criterion: string; weightingPercentage?: number | null; description?: string; isPublished?: boolean }>;
   geminiAnalysis?: any;
   requirements?: TenderRequirement[];
   documents?: TenderDocumentItem[];
+  enrichment?: TenderEnrichment;
 }
+
+export type ProcurementStage =
+  | 'OPEN TENDER'
+  | 'PLANNED PROCUREMENT'
+  | 'PIPELINE'
+  | 'PRELIMINARY MARKET ENGAGEMENT'
+  | 'FRAMEWORK'
+  | 'DYNAMIC MARKET'
+  | 'AWARD'
+  | 'OTHER';
+
+export type DocumentAccessState = 'PUBLIC' | 'LOGIN REQUIRED' | 'NOT PUBLISHED' | 'BROKEN';
 
 export interface TenderRequirement {
   id: string;
   tenderId: string;
-  category: 'insurance' | 'experience' | 'certification' | 'turnover' | 'security' | 'other';
+  category: 'insurance' | 'experience' | 'certification' | 'turnover' | 'security' | 'financial' | 'social_value' | 'governance' | 'other';
   requirementName: string;
   buyerRequirementText: string;
   sourceCitation: string;
   adrasticCapabilityText?: string;
-  status: 'PASS' | 'ACTION_REQUIRED' | 'PARTNER_REQUIRED' | 'FAIL' | 'UNKNOWN';
+  status: 'PASS' | 'PASS_WITH_ACTION' | 'ACTION_REQUIRED' | 'PARTNER_REQUIRED' | 'FAIL' | 'UNKNOWN';
   mandatory: boolean;
 }
 
 export interface TenderDocumentItem {
   id: string;
   fileName: string;
-  docType: 'itt' | 'specification' | 'sq' | 'pricing' | 'social_value' | 'clarifications' | 'terms';
+  docType: 'itt' | 'specification' | 'sq' | 'pricing' | 'social_value' | 'clarifications' | 'terms' | 'official_notice' | 'buyer_portal' | 'other' | string;
   fileSizeBytes?: number;
   fileHash: string;
+  sourceUrl?: string;
+  downloadUrl?: string;
+  accessState?: DocumentAccessState;
   requiresLogin: boolean;
   versionNumber: number;
-  analysisStatus: 'pending' | 'analyzed' | 'failed';
+  analysisStatus: 'pending' | 'analyzed' | 'failed' | 'not_applicable';
   lastCheckedAt: string;
+  notes?: string;
 }
+
+export interface EnrichedEvaluationCriterion {
+  id: string;
+  criterion: string;
+  weightingPercentage?: number | null;
+  description?: string;
+  isPublished: boolean;
+}
+
+export interface ScopeAndSpecification {
+  whatBuyerWants: string;
+  businessObjective: string;
+  requiredServices: string[];
+  keyDeliverables: string[];
+  targetAudience: string;
+  contractScope: string;
+  locations: string[];
+  duration: string;
+  importantDates: Array<{ label: string; date: string; description?: string }>;
+  creativeMarketingDigitalOverlap: string[];
+  servicesOutsideCoreCapability: string[];
+  isDetailedScopePublished: boolean;
+  scopeNoticeText?: string;
+}
+
+export interface SubmissionAndEngagementDetails {
+  procurementStage: ProcurementStage;
+  submissionRoute: string;
+  submissionPortalUrl?: string | null;
+  deadline?: string | null;
+  clarificationDeadline?: string | null;
+  buyerContact: {
+    name?: string;
+    email?: string;
+    telephone?: string;
+    address?: string;
+  };
+  requiredAttachments: string[];
+  participationInstructions: string;
+  isOpenForBid: boolean;
+  isMarketEngagement: boolean;
+}
+
+export interface FitAndRisksAssessment {
+  whyAdrastichyperlinkFits: string;
+  whyItMayNotFit: string;
+  riskFactors: string[];
+  partneringRecommendation: string;
+}
+
+export interface SourceEvidenceItem {
+  id: string;
+  topic: string;
+  fact: string;
+  source: string;
+  sourceType: 'OFFICIAL_OCDS_NOTICE' | 'DOCUMENT' | 'PORTAL' | 'BUYER_COMMUNICATION' | 'INFERENCE';
+  confidence: 'VERIFIED' | 'HIGH' | 'ESTIMATED';
+}
+
+export interface TenderEnrichment {
+  tenderId: string;
+  canonicalReference: string;
+  enrichedAt: string;
+  procurementStage: ProcurementStage;
+  scopeAndSpec: ScopeAndSpecification;
+  documents: TenderDocumentItem[];
+  requirements: TenderRequirement[];
+  evaluationCriteria: EnrichedEvaluationCriterion[];
+  submissionDetails: SubmissionAndEngagementDetails;
+  fitAndRisks: FitAndRisksAssessment;
+  sourceEvidence: SourceEvidenceItem[];
+}
+

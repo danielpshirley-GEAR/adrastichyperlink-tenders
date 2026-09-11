@@ -208,7 +208,11 @@ export class TendersRepository {
     const applicationPortalUrl = (tender as any).applicationPortalUrl || existing?.application_portal_url || null;
     const serviceTags = JSON.stringify(tender.serviceTags || (existing?.service_tags ? JSON.parse(existing.service_tags) : []));
     const bidDecisionState = tender.bidDecisionState || existing?.bid_decision_state || 'UNDECIDED';
-    const evaluationCriteria = JSON.stringify(tender.evaluationCriteria || (existing?.evaluation_criteria ? JSON.parse(existing.evaluation_criteria) : []));
+    const evaluationCriteria = JSON.stringify(
+      (tender as any).enrichment
+        ? { criteria: tender.evaluationCriteria || [], enrichment: (tender as any).enrichment }
+        : tender.evaluationCriteria || (existing?.evaluation_criteria ? JSON.parse(existing.evaluation_criteria) : [])
+    );
     const requirements = JSON.stringify((tender as any).requirements || (existing?.requirements ? JSON.parse(existing.requirements) : []));
     const documents = JSON.stringify((tender as any).documents || (existing?.documents ? JSON.parse(existing.documents) : []));
 
@@ -352,40 +356,65 @@ function mapRowToTender(row: any): TenderSummary {
     }
   }
 
+  let evaluationCriteria: any[] = [];
+  let enrichment: any = undefined;
+  if (row.evaluation_criteria) {
+    try {
+      const parsed = JSON.parse(row.evaluation_criteria);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        evaluationCriteria = Array.isArray(parsed.criteria) ? parsed.criteria : [];
+        enrichment = parsed.enrichment || undefined;
+      } else if (Array.isArray(parsed)) {
+        evaluationCriteria = parsed;
+      }
+    } catch {
+      evaluationCriteria = [];
+    }
+  }
+
+  const procurementStage = enrichment?.procurementStage || (
+    (row.title?.toLowerCase().includes('prior information') || row.plain_english_summary?.toLowerCase().includes('market engagement') || row.plain_english_summary?.toLowerCase().includes('preliminary market'))
+      ? 'PRELIMINARY MARKET ENGAGEMENT'
+      : 'OPEN TENDER'
+  );
+
   return {
     id: row.id,
-    canonicalReference: row.canonical_reference,
-    latestNoticeId: row.latest_notice_id || undefined,
-    ocid: row.ocid || undefined,
-    title: row.title || null,
-    plainEnglishSummary: row.plain_english_summary || '',
-    buyerName: row.buyer_name || null,
-    buyerId: row.buyer_id || undefined,
-    buyerType: 'Public Body',
-    valueAmount: row.value_amount !== null && row.value_amount !== undefined ? Number(row.value_amount) : undefined,
-    valueCurrency: row.value_currency || null,
-    valueDescription: row.value_description || undefined,
-    publishedAt: row.published_at || null,
-    submissionDeadline: row.submission_deadline || null,
-    clarificationDeadline: row.clarification_deadline || null,
-    daysRemaining,
-    qualification: row.qualification as Qualification,
-    deterministicResult: row.deterministic_result || undefined,
-    aiResult: row.ai_result || undefined,
-    finalQualification: row.final_qualification || undefined,
-    lifecycleStatus: row.lifecycle_status || 'ACTIVE',
-    verificationGrade: row.verification_grade as VerificationGrade,
-    officialNoticeUrl: row.official_notice_url,
-    applicationPortalUrl: row.application_portal_url || undefined,
-    serviceTags: row.service_tags ? JSON.parse(row.service_tags) : [],
-    sourceId: 'find_a_tender',
-    isArchived: Boolean(row.is_archived),
-    archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
-    discoveredAt: row.discovered_at,
-    lastVerifiedAt: row.last_verified_at,
-    bidDecisionState: row.bid_decision_state || 'UNDECIDED',
-    evaluationCriteria: row.evaluation_criteria ? JSON.parse(row.evaluation_criteria) : [],
-    requirements: row.requirements ? JSON.parse(row.requirements) : [],
-    documents: row.documents ? JSON.parse(row.documents) : [],
-  };
-}
+      canonicalReference: row.canonical_reference,
+      latestNoticeId: row.latest_notice_id || undefined,
+      ocid: row.ocid || undefined,
+      title: row.title || null,
+      plainEnglishSummary: row.plain_english_summary || '',
+      buyerName: row.buyer_name || null,
+      buyerId: row.buyer_id || undefined,
+      buyerType: 'Public Body',
+      valueAmount: row.value_amount !== null && row.value_amount !== undefined ? Number(row.value_amount) : undefined,
+      valueCurrency: row.value_currency || null,
+      valueDescription: row.value_description || undefined,
+      publishedAt: row.published_at || null,
+      submissionDeadline: row.submission_deadline || null,
+      clarificationDeadline: row.clarification_deadline || null,
+      daysRemaining,
+      qualification: row.qualification as Qualification,
+      deterministicResult: row.deterministic_result || undefined,
+      aiResult: row.ai_result || undefined,
+      finalQualification: row.final_qualification || undefined,
+      lifecycleStatus: row.lifecycle_status || 'ACTIVE',
+      verificationGrade: row.verification_grade as VerificationGrade,
+      officialNoticeUrl: row.official_notice_url,
+      applicationPortalUrl: row.application_portal_url || undefined,
+      serviceTags: row.service_tags ? JSON.parse(row.service_tags) : [],
+      sourceId: 'find_a_tender',
+      isArchived: Boolean(row.is_archived),
+      archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
+      discoveredAt: row.discovered_at,
+      lastVerifiedAt: row.last_verified_at,
+      bidDecisionState: row.bid_decision_state || 'UNDECIDED',
+      procurementStage,
+      description: row.plain_english_summary || '',
+      evaluationCriteria,
+      requirements: row.requirements ? JSON.parse(row.requirements) : [],
+      documents: row.documents ? JSON.parse(row.documents) : [],
+      enrichment,
+    };
+  }
