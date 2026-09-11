@@ -470,7 +470,7 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
     finalRedirectUrl: string | null,
     notes: string | null
   ): Promise<void> {
-    const { error } = await this.client.from('tender_source_links').insert({
+    const basePayload = {
       id: crypto.randomUUID(),
       tender_id: tenderId,
       source_id: sourceId,
@@ -479,8 +479,21 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       verification_grade: verificationGrade,
       http_status: httpStatus,
       final_redirect_url: finalRedirectUrl,
+    };
+
+    let { error } = await this.client.from('tender_source_links').insert({
+      ...basePayload,
       verification_notes: notes,
     });
+
+    if (error && (error.message.includes('verification_notes') || error.message.includes('column'))) {
+      const fallback = await this.client.from('tender_source_links').insert({
+        ...basePayload,
+        notes: notes,
+      });
+      error = fallback.error;
+    }
+
     if (error) {
       throw new Error(`Failed to record source link: ${error.message}`);
     }
