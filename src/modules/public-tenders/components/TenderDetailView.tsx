@@ -18,6 +18,7 @@ import {
   Target,
   Sparkles,
   AlertTriangle,
+  AlertCircle,
   MapPin,
   Users,
   FileText,
@@ -223,6 +224,16 @@ export function TenderDetailView({
         {enrichError && (
           <div className="p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-800 font-medium">
             {enrichError}
+          </div>
+        )}
+
+        {tender.identityConflict && (
+          <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-xs text-red-900 font-medium flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold font-mono">IDENTITY_CONFLICT FLAGGED</div>
+              <div>{tender.identityConflictDetails || 'Conflicting procurement release records detected. Canonical identity preserved for audit investigation.'}</div>
+            </div>
           </div>
         )}
       </header>
@@ -612,34 +623,66 @@ export function TenderDetailView({
 
         {/* Market Engagement Submission Form Alert if referenced */}
         {submissionDetails?.marketEngagementForm && (
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-2 text-xs text-amber-950">
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3 text-xs text-amber-950">
             <div className="flex items-center justify-between">
               <div className="font-bold font-mono text-xs flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-amber-700" />
-                <span>Market Engagement Submission Form</span>
+                <span>{submissionDetails.marketEngagementForm.formTitle || 'Market Engagement Submission Form'}</span>
               </div>
-              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-mono text-[10px] font-bold">
+              <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold border ${
+                submissionDetails.marketEngagementForm.accessState === 'PUBLIC'
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                  : 'bg-amber-100 text-amber-900 border-amber-300'
+              }`}>
                 {submissionDetails.marketEngagementForm.statusText}
               </span>
             </div>
+
+            {submissionDetails.marketEngagementForm.formType && (
+              <div className="text-[11px] font-mono text-amber-800">
+                <span className="font-bold">Form Type: </span>{submissionDetails.marketEngagementForm.formType}
+              </div>
+            )}
+
+            {submissionDetails.marketEngagementForm.sourceEvidenceText && (
+              <div className="bg-amber-100/60 p-2.5 rounded border border-amber-200/80 text-[11px] leading-relaxed text-amber-900 italic">
+                <span className="font-bold not-italic font-mono text-[10px] block text-amber-800 uppercase mb-0.5">Source Evidence:</span>
+                &ldquo;{submissionDetails.marketEngagementForm.sourceEvidenceText}&rdquo;
+              </div>
+            )}
+
             <p className="text-[11px] leading-relaxed text-amber-900">
               {submissionDetails.marketEngagementForm.instructions}
             </p>
+
             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-200 text-[10px] font-mono">
               <span className="text-amber-800">
-                Deadline: {submissionDetails.marketEngagementForm.deadlineText || 'Not published in initial notice (Do not assume deadline)'}
+                Deadline: {submissionDetails.marketEngagementForm.deadlineText || submissionDetails.marketEngagementForm.deadlineSource || 'Not published in initial notice (Do not assume deadline)'}
               </span>
-              {submissionDetails.marketEngagementForm.portalUrl && (
-                <a
-                  href={submissionDetails.marketEngagementForm.portalUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-tender-primary hover:underline font-bold"
-                >
-                  <span>Access Authority Portal</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
+              <div className="flex items-center gap-3">
+                {submissionDetails.marketEngagementForm.sourceUrl && (
+                  <a
+                    href={submissionDetails.marketEngagementForm.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-tender-primary hover:underline font-bold"
+                  >
+                    <span>Open Form Link</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                {submissionDetails.marketEngagementForm.portalUrl && submissionDetails.marketEngagementForm.portalUrl !== submissionDetails.marketEngagementForm.sourceUrl && (
+                  <a
+                    href={submissionDetails.marketEngagementForm.portalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-gallery-muted hover:underline"
+                  >
+                    <span>Authority Portal</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         )}

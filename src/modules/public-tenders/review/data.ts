@@ -364,7 +364,7 @@ export const reviewTenders: ReviewTenderDetail[] = [
         "weightingPercentage": null,
         "description": "Detailed award evaluation criteria and quality/price weightings will be published when the formal contract notice and ITT are released.",
         "isPublished": false,
-        "factType": "EXPLICIT_BUYER_FACT"
+        "factType": "DERIVED_ABSENCE"
       }
     ],
     "enrichment": {
@@ -530,13 +530,13 @@ export const reviewTenders: ReviewTenderDetail[] = [
           "weightingPercentage": null,
           "description": "Detailed award evaluation criteria and quality/price weightings will be published when the formal contract notice and ITT are released.",
           "isPublished": false,
-          "factType": "EXPLICIT_BUYER_FACT"
+          "factType": "DERIVED_ABSENCE"
         }
       ],
       "submissionDetails": {
         "procurementStage": "PRELIMINARY MARKET ENGAGEMENT",
         "submissionRoute": "Public Contracts Scotland (PCS) / Direct Authority Market Engagement",
-        "submissionPortalUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+        "submissionPortalUrl": "https://www.publiccontractsscotland.gov.uk/Search/Search_Switch.aspx?ID=837836",
         "deadline": null,
         "clarificationDeadline": null,
         "buyerContact": {
@@ -554,9 +554,15 @@ export const reviewTenders: ReviewTenderDetail[] = [
         "marketEngagementForm": {
           "isReferenced": true,
           "statusText": "MARKET ENGAGEMENT FORM REFERENCED — ACCESS NOT YET VERIFIED",
-          "portalUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+          "formTitle": "Market Engagement Submission Form",
+          "formType": "Supplier market engagement response form",
+          "sourceEvidenceText": "Interested parties are asked to complete the market engagement Submission Form and return to markbremner@aberdeencity.gov.uk by the deadline stated in the submission form",
+          "sourceUrl": "https://www.publiccontractsscotland.gov.uk/Search/Search_Switch.aspx?ID=837836",
+          "portalUrl": "https://www.publiccontractsscotland.gov.uk/Search/Search_Switch.aspx?ID=837836",
           "accessState": "ACCESS NOT YET VERIFIED",
+          "deadline": null,
           "deadlineText": null,
+          "deadlineSource": "Stated in submission form (unspecified in notice text)",
           "instructions": "Suppliers should access the official buyer portal (Public Contracts Scotland / Authority Portal) to review preliminary engagement notices and supplier response instructions."
         }
       },

@@ -78,6 +78,8 @@ export interface TenderSummary {
   enrichment?: TenderEnrichment;
   isEligibilityPublished?: boolean;
   eligibilityNoticeText?: string;
+  identityConflict?: boolean;
+  identityConflictDetails?: string;
 }
 
 export type ProcurementStage =
@@ -102,7 +104,17 @@ export type FactType =
   | 'DOCUMENT_EXTRACTED_FACT'
   | 'PORTAL_FACT'
   | 'AI_INTERPRETATION'
+  | 'SYSTEM_STATUS'
+  | 'DERIVED_ABSENCE'
   | 'UNKNOWN';
+
+export type EvidenceConfidence =
+  | 'VERIFIED'
+  | 'HIGH'
+  | 'ESTIMATED'
+  | 'MEDIUM'
+  | 'LOW'
+  | 'UNVERIFIED';
 
 export type DocumentItemCategory =
   | 'SOURCE_NOTICE'
@@ -189,9 +201,15 @@ export interface ScopeAndSpecification {
 export interface MarketEngagementFormStatus {
   isReferenced: boolean;
   statusText: string;
+  formTitle?: string;
+  formType?: string;
+  sourceEvidenceText?: string;
+  sourceUrl?: string | null;
   portalUrl?: string;
   accessState: DocumentAccessState;
+  deadline?: string | null;
   deadlineText?: string | null;
+  deadlineSource?: string | null;
   instructions?: string;
 }
 
@@ -234,7 +252,7 @@ export interface SourceEvidenceItem {
   page?: number | null;
   section?: string;
   evidenceText?: string;
-  confidence: 'VERIFIED' | 'HIGH' | 'ESTIMATED' | 'MEDIUM' | 'LOW';
+  confidence: EvidenceConfidence;
   isVerified: boolean;
 }
 

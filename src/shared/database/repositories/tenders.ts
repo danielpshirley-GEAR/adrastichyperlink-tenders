@@ -133,18 +133,31 @@ export class TendersRepository {
 
     // Prioritize OCID for canonical deduplication, then canonicalReference
     let existing: any = null;
-    if (tender.ocid) {
-      existing = db.prepare('SELECT * FROM tenders WHERE ocid = ?').get(tender.ocid) as any;
-    }
-    if (!existing) {
+    let identityConflict = false;
+    let identityConflictDetails: string | undefined = undefined;
+
+    if (tender.canonicalReference) {
       existing = db.prepare('SELECT * FROM tenders WHERE canonical_reference = ?').get(tender.canonicalReference) as any;
+    }
+
+    if (tender.ocid) {
+      const existingByOcid = db.prepare('SELECT * FROM tenders WHERE ocid = ?').get(tender.ocid) as any;
+      if (existing && existingByOcid && existing.id !== existingByOcid.id) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Canonical reference '${tender.canonicalReference}' belongs to record ${existing.id}, but OCID '${tender.ocid}' belongs to distinct record ${existingByOcid.id}`;
+      } else if (existing && existing.ocid && existing.ocid !== tender.ocid) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Existing record for '${tender.canonicalReference}' has canonical OCID '${existing.ocid}', which conflicts with provided '${tender.ocid}'`;
+      } else if (!existing && existingByOcid) {
+        existing = existingByOcid;
+      }
     }
 
     const id = existing?.id || tender.id || randomUUID();
     const now = new Date().toISOString();
 
     const latestNoticeId = (tender as any).latestNoticeId || tender.canonicalReference;
-    const ocid = tender.ocid || existing?.ocid || null;
+    const ocid = identityConflict ? (existing?.ocid || null) : (tender.ocid || existing?.ocid || null);
     const title = tender.title !== undefined ? tender.title : (existing?.title ?? null);
     const plainEnglishSummary = tender.plainEnglishSummary ?? existing?.plain_english_summary ?? null;
     const buyerId = (tender as any).buyerId || existing?.buyer_id || null;
@@ -282,6 +295,10 @@ export class TendersRepository {
 
     const saved = await TendersRepository.getById(id);
     if (!saved) throw new Error('Failed to retrieve saved tender');
+    if (identityConflict) {
+      saved.identityConflict = true;
+      saved.identityConflictDetails = identityConflictDetails;
+    }
     return saved;
   }
 

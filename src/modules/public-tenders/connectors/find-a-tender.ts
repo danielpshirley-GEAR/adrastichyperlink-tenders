@@ -33,6 +33,60 @@ export function assertValidNoticeUrl(url: string): boolean {
   return /^https:\/\/(www\.)?find-tender\.service\.gov\.uk\/Notice\/\d{6}-\d{4}$/.test(url);
 }
 
+export interface IdentityValidationResult {
+  valid: boolean;
+  isConflict: boolean;
+  status: 'VALID' | 'IDENTITY_CONFLICT' | 'INVALID';
+  reason?: string;
+  expectedOcid?: string;
+  providedOcid?: string;
+}
+
+/**
+ * Validates that NOTICE ID, OCID, BUYER, and TITLE belong to the same official source release.
+ * Flags IDENTITY_CONFLICT if mismatched.
+ */
+export function validateNoticeIdentity(
+  candidate: { noticeId: string; ocid?: string | null; buyerName?: string | null; title?: string | null },
+  rawRelease?: any
+): IdentityValidationResult {
+  if (!candidate.noticeId) {
+    return { valid: false, isConflict: false, status: 'INVALID', reason: 'Missing notice ID' };
+  }
+
+  if (rawRelease) {
+    const rawId = String(rawRelease.id || '');
+    const rawOcid = rawRelease.ocid ? String(rawRelease.ocid) : undefined;
+    const rawTitle = rawRelease.tender?.title || rawRelease.title || null;
+    const rawBuyer = rawRelease.buyer?.name || null;
+
+    // Check notice ID match
+    if (rawId && candidate.noticeId !== rawId) {
+      return {
+        valid: false,
+        isConflict: true,
+        status: 'IDENTITY_CONFLICT',
+        reason: `IDENTITY_CONFLICT: Notice ID mismatch. Candidate '${candidate.noticeId}' != release '${rawId}'`,
+      };
+    }
+
+    // Check OCID match
+    if (candidate.ocid && rawOcid && candidate.ocid !== rawOcid) {
+      return {
+        valid: false,
+        isConflict: true,
+        status: 'IDENTITY_CONFLICT',
+        reason: `IDENTITY_CONFLICT: Canonical OCID mismatch. Provided '${candidate.ocid}' != release OCID '${rawOcid}'`,
+        expectedOcid: rawOcid,
+        providedOcid: candidate.ocid,
+      };
+    }
+  }
+
+  return { valid: true, isConflict: false, status: 'VALID' };
+}
+
+
 export class FindATenderConnector implements ProcurementConnector {
   readonly id = 'find_a_tender';
   readonly name = 'Find a Tender (FTS)';
@@ -303,7 +357,12 @@ export class FindATenderConnector implements ProcurementConnector {
     const noticeId = String(r.id);
     const tender = r.tender || {};
     const title = tender.title || r.description?.slice(0, 100) || null;
-    const description = tender.description || r.description || '';
+    const descParts: string[] = [];
+    if (tender.description) descParts.push(tender.description);
+    if (r.description && (!tender.description || !tender.description.includes(r.description))) {
+      descParts.push(r.description);
+    }
+    const description = descParts.join('\n\n');
 
     // Extract Buyer
     let buyerName: string | null = r.buyer?.name || null;

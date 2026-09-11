@@ -137,11 +137,24 @@ export class SupabaseTendersRepository implements ITendersRepository {
   ): Promise<TenderSummary> {
     // Deduplicate: prioritize OCID, then canonicalReference
     let existing: TenderSummary | null = null;
-    if (tender.ocid) {
-      existing = await this.getByOcid(tender.ocid);
-    }
-    if (!existing) {
+    let identityConflict = false;
+    let identityConflictDetails: string | undefined = undefined;
+
+    if (tender.canonicalReference) {
       existing = await this.getByCanonicalReference(tender.canonicalReference);
+    }
+
+    if (tender.ocid) {
+      const existingByOcid = await this.getByOcid(tender.ocid);
+      if (existing && existingByOcid && existing.id !== existingByOcid.id) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Canonical reference '${tender.canonicalReference}' belongs to record ${existing.id}, but OCID '${tender.ocid}' belongs to distinct record ${existingByOcid.id}`;
+      } else if (existing && existing.ocid && existing.ocid !== tender.ocid) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Existing record for '${tender.canonicalReference}' has canonical OCID '${existing.ocid}', which conflicts with provided '${tender.ocid}'`;
+      } else if (!existing && existingByOcid) {
+        existing = existingByOcid;
+      }
     }
 
     const now = new Date().toISOString();
@@ -196,7 +209,7 @@ export class SupabaseTendersRepository implements ITendersRepository {
       id,
       canonical_reference: canonicalReference,
       latest_notice_id: latestNoticeId,
-      ocid: tender.ocid || existing?.ocid || null,
+      ocid: identityConflict ? (existing?.ocid || null) : (tender.ocid || existing?.ocid || null),
       title: tender.title !== undefined ? tender.title : (existing?.title ?? null),
       plain_english_summary: tender.plainEnglishSummary ?? existing?.plainEnglishSummary ?? null,
       buyer_id: buyerId,
@@ -242,7 +255,12 @@ export class SupabaseTendersRepository implements ITendersRepository {
         res = await this.client.from('tenders').insert(payload).select().single();
       }
       if (res.error) throw new Error(`Failed to insert tender: ${res.error.message}`);
-      return this.mapRow(res.data);
+      const mapped = this.mapRow(res.data);
+      if (identityConflict) {
+        mapped.identityConflict = true;
+        mapped.identityConflictDetails = identityConflictDetails;
+      }
+      return mapped;
     } else {
       payload.last_verified_at = now;
       let res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
@@ -257,7 +275,12 @@ export class SupabaseTendersRepository implements ITendersRepository {
         res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
       }
       if (res.error) throw new Error(`Failed to update tender: ${res.error.message}`);
-      return this.mapRow(res.data);
+      const mapped = this.mapRow(res.data);
+      if (identityConflict) {
+        mapped.identityConflict = true;
+        mapped.identityConflictDetails = identityConflictDetails;
+      }
+      return mapped;
     }
   }
 

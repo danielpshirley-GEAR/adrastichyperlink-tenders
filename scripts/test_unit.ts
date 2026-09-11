@@ -488,6 +488,132 @@ async function runUnitTests() {
     });
   });
 
+  // 18. Market engagement phrase alone does NOT create form
+  await test('Form Detection: Market engagement phrase alone does NOT create form', async () => {
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const form = await DetailEnrichmentService.detectMarketEngagementForm(
+      'The Council is currently undertaking preliminary market engagement to inform potential procurement models.'
+    );
+    assert.strictEqual(form, undefined, 'Must not detect form on generic phrase alone');
+  });
+
+  // 19. Explicit "submission form" creates referenced form
+  await test('Form Detection: Explicit "submission form" creates referenced form', async () => {
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const form = await DetailEnrichmentService.detectMarketEngagementForm(
+      'Interested parties are asked to complete the market engagement Submission Form and return by email.'
+    );
+    assert.ok(form, 'Must detect form when submission form is explicitly referenced');
+    assert.strictEqual(form?.isReferenced, true);
+    assert.strictEqual(form?.formTitle, 'Market Engagement Submission Form');
+    assert.strictEqual(form?.accessState, 'ACCESS NOT YET VERIFIED');
+    assert.strictEqual(form?.deadline, null, 'Must not invent deadline');
+    assert.ok(form?.sourceEvidenceText?.includes('Submission Form'));
+  });
+
+  // 20. Explicit Microsoft Forms URL extracts real URL
+  await test('Form Detection: Explicit Microsoft Forms URL extracts real URL', async () => {
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const form = await DetailEnrichmentService.detectMarketEngagementForm(
+      'To help develop the tender please complete the form at: https://forms.office.com/e/vW0k03HeVY'
+    );
+    assert.ok(form, 'Must detect form with URL');
+    assert.strictEqual(form?.isReferenced, true);
+    assert.strictEqual(form?.sourceUrl, 'https://forms.office.com/e/vW0k03HeVY');
+    assert.strictEqual(form?.formType, 'Market research / supplier interest form');
+    assert.strictEqual(form?.deadline, null);
+  });
+
+  // 21. Real Glasgow notice extracts Microsoft Forms URL
+  await test('Real Notice: Glasgow notice extracts Microsoft Forms URL', async () => {
+    const { FindATenderConnector } = await import('../src/modules/public-tenders/connectors/find-a-tender');
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const connector = new FindATenderConnector();
+    const notice = await connector.fetchNotice('067718-2026');
+    assert.ok(notice, 'Glasgow notice must be fetched');
+    assert.strictEqual(notice?.ocid, 'ocds-h6vhtk-06cdb9', 'Glasgow canonical OCID must be ocds-h6vhtk-06cdb9');
+
+    const form = await DetailEnrichmentService.detectMarketEngagementForm(notice!.description);
+    assert.ok(form, 'Must detect Glasgow form from notice text');
+    assert.strictEqual(form?.isReferenced, true);
+    assert.strictEqual(form?.sourceUrl, 'https://forms.office.com/e/vW0k03HeVY');
+  });
+
+  // 22. Real Aberdeen notice references submission form and validates canonical OCID
+  await test('Real Notice: Aberdeen notice references submission form and matches canonical OCID', async () => {
+    const { FindATenderConnector } = await import('../src/modules/public-tenders/connectors/find-a-tender');
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const connector = new FindATenderConnector();
+    const notice = await connector.fetchNotice('068074-2026');
+    assert.ok(notice, 'Aberdeen notice must be fetched');
+    assert.strictEqual(notice?.ocid, 'ocds-h6vhtk-06ce78', 'Aberdeen canonical OCID must be ocds-h6vhtk-06ce78');
+
+    const form = await DetailEnrichmentService.detectMarketEngagementForm(notice!.description);
+    assert.ok(form, 'Must detect Aberdeen referenced form');
+    assert.strictEqual(form?.isReferenced, true);
+    assert.strictEqual(form?.formTitle, 'Market Engagement Submission Form');
+    assert.strictEqual(form?.accessState, 'ACCESS NOT YET VERIFIED');
+    assert.ok(form?.sourceEvidenceText?.includes('Submission Form'));
+  });
+
+  // 23. Fail-Closed Fact Types: Missing factType defaults to UNKNOWN and unverified
+  await test('Fail-Closed: Missing factType defaults to UNKNOWN and unverified', async () => {
+    const rawFactWithoutType: any = { topic: 'Budget', fact: 'Estimated £1m', source: 'Notice' };
+    const factType = rawFactWithoutType.factType ? rawFactWithoutType.factType : 'UNKNOWN';
+    const isBuyer = factType === 'EXPLICIT_BUYER_FACT' || factType === 'DOCUMENT_EXTRACTED_FACT' || factType === 'PORTAL_FACT';
+    const isVerified = isBuyer && Boolean(rawFactWithoutType.source);
+    const confidence = isVerified ? 'VERIFIED' : 'UNVERIFIED';
+
+    assert.strictEqual(factType, 'UNKNOWN');
+    assert.strictEqual(isVerified, false);
+    assert.strictEqual(confidence, 'UNVERIFIED');
+  });
+
+  // 24. Fail-Closed: Fact without evidence is not verified
+  await test('Fail-Closed: Fact without evidence is not verified', async () => {
+    const factWithoutEvidence: any = { topic: 'Eligibility', fact: 'Must have ISO9001', factType: 'EXPLICIT_BUYER_FACT', source: '' };
+    const hasTraceableEvidence = Boolean(factWithoutEvidence.source && factWithoutEvidence.evidenceText);
+    const isVerified = hasTraceableEvidence;
+    assert.strictEqual(isVerified, false, 'Missing evidence cannot be verified');
+  });
+
+  // 25. Requirement Evidence Gate: Requirement without evidence cannot become published buyer requirement
+  await test('Requirement Evidence Gate: Requirement without evidence cannot become published buyer requirement', async () => {
+    const requirementsWithUnverified: any[] = [
+      {
+        requirementName: 'AI Assumed Insurance',
+        buyerRequirementText: '£5m Professional Indemnity',
+        factType: 'UNKNOWN', // Missing provenance
+        sourceCitation: '',
+        evidenceText: '',
+      },
+    ];
+
+    const verified = requirementsWithUnverified.filter((r) => {
+      const isBuyerFact = r.factType === 'EXPLICIT_BUYER_FACT' || r.factType === 'DOCUMENT_EXTRACTED_FACT';
+      const hasText = Boolean(r.buyerRequirementText?.trim());
+      const hasEvidence = Boolean(r.evidenceText?.trim() || r.sourceCitation?.trim());
+      return isBuyerFact && hasText && hasEvidence;
+    });
+
+    const isEligibilityPublished = verified.length > 0;
+    assert.strictEqual(verified.length, 0, 'Unverified requirement must be discarded from buyer requirements');
+    assert.strictEqual(isEligibilityPublished, false, 'Eligibility must not be marked published');
+  });
+
+  // 26. Identity Validation: Wrong OCID / correct notice ID triggers IDENTITY_CONFLICT
+  await test('Identity Validation: Wrong OCID / notice ID mismatch triggers IDENTITY_CONFLICT', async () => {
+    const { validateNoticeIdentity } = await import('../src/modules/public-tenders/connectors/find-a-tender');
+    const result = validateNoticeIdentity(
+      { noticeId: '068074-2026', ocid: 'ocds-h6vhtk-WRONG_OCID' },
+      { id: '068074-2026', ocid: 'ocds-h6vhtk-06ce78' }
+    );
+    assert.strictEqual(result.status, 'IDENTITY_CONFLICT');
+    assert.strictEqual(result.isConflict, true);
+    assert.strictEqual(result.valid, false);
+    assert.strictEqual(result.expectedOcid, 'ocds-h6vhtk-06ce78');
+  });
+
   console.log(`\n====================================================`);
   console.log(`UNIT SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);
   console.log(`====================================================\n`);

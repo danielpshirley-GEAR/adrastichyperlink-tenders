@@ -72,12 +72,14 @@ async function main() {
   console.log(`- Partnering Recommendation:`, aberdeenEnrichment.fitAndRisks.partneringRecommendation);
 
   // Assertions for Aberdeen
+  assert.strictEqual(aberdeenRaw.ocid, 'ocds-h6vhtk-06ce78', 'Aberdeen canonical OCID must strictly match ocds-h6vhtk-06ce78');
   assert.strictEqual(aberdeenEnrichment.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
   assert.strictEqual(aberdeenEnrichment.submissionDetails.isOpenForBid, false, 'Bidding must NOT be open for PME');
   assert.strictEqual(aberdeenEnrichment.submissionDetails.isMarketEngagement, true);
   assert.strictEqual(aberdeenEnrichment.requirements.length, 0, 'Must NOT fabricate eligibility requirements for Aberdeen');
   assert.strictEqual(aberdeenEnrichment.isEligibilityPublished, false);
   assert.strictEqual(aberdeenEnrichment.evaluationCriteria[0].isPublished, false);
+  assert.strictEqual(aberdeenEnrichment.evaluationCriteria[0].factType, 'DERIVED_ABSENCE', 'Absence of criteria must be DERIVED_ABSENCE');
   assert.ok(aberdeenEnrichment.evaluationCriteria[0].criterion.includes('not yet been published'));
   assert.ok(aberdeenEnrichment.scopeAndSpec.buyerRequiredServices.length > 0, 'Must extract buyer scope');
   assert.strictEqual(aberdeenEnrichment.scopeAndSpec.buyerKeyDeliverables.length, 0, 'Must not claim deliverables when unstated');
@@ -88,6 +90,9 @@ async function main() {
   aberdeenEnrichment.documents.forEach(d => {
     assert.strictEqual(d.fileHash, null, 'Un-downloaded documents must have null fileHash');
   });
+  assert.strictEqual(aberdeenEnrichment.submissionDetails.marketEngagementForm?.isReferenced, true);
+  assert.strictEqual(aberdeenEnrichment.submissionDetails.marketEngagementForm?.accessState, 'ACCESS NOT YET VERIFIED');
+  assert.strictEqual(aberdeenEnrichment.submissionDetails.marketEngagementForm?.deadline, null);
   assert.ok(aberdeenEnrichment.submissionDetails.buyerContact.name?.toLowerCase().includes('mark bremner'));
   assert.strictEqual(aberdeenEnrichment.submissionDetails.buyerContact.email, 'markbremner@aberdeencity.gov.uk');
   assert.ok(aberdeenEnrichment.fitAndRisks.partneringRecommendation.includes('PARTNER'));
@@ -106,6 +111,7 @@ async function main() {
   console.log(`[PASS] Fetched official OCDS notice: ${glasgowRaw.noticeId} (${glasgowRaw.title})`);
   console.log(`- Value: £${glasgowRaw.valueAmount?.toLocaleString()} ${glasgowRaw.valueCurrency}`);
   console.log(`- Buyer: ${glasgowRaw.buyerName}`);
+  console.log(`- Canonical OCID: ${glasgowRaw.ocid}`);
 
   const glasgowTender = {
     id: 'test-glasgow-uuid',
@@ -140,27 +146,34 @@ async function main() {
   console.log(`- Buyer Deliverables (${glasgowEnrichment.scopeAndSpec.buyerKeyDeliverables.length}):`, glasgowEnrichment.scopeAndSpec.buyerKeyDeliverables);
   console.log(`- Creative Opportunities (${glasgowEnrichment.scopeAndSpec.creativeOpportunities.length}):`, glasgowEnrichment.scopeAndSpec.creativeOpportunities.map(o => o.opportunity));
   console.log(`- Eligibility Published: ${glasgowEnrichment.isEligibilityPublished} (Requirements count: ${glasgowEnrichment.requirements.length})`);
-  console.log(`- Evaluation Published: ${glasgowEnrichment.evaluationCriteria[0]?.isPublished}`);
+  console.log(`- Evaluation Published: ${glasgowEnrichment.evaluationCriteria[0]?.isPublished} (factType: ${glasgowEnrichment.evaluationCriteria[0]?.factType})`);
   console.log(`- Document Counts:`, glasgowEnrichment.documentCounts);
   console.log(`- Document Items:`);
   glasgowEnrichment.documents.forEach(d => {
     console.log(`  * [${d.category}] ${d.fileName} (Access: ${d.accessState}, Hash: ${d.fileHash})`);
   });
+  console.log(`- Market Engagement Form:`, glasgowEnrichment.submissionDetails.marketEngagementForm);
   console.log(`- Contact Point:`, glasgowEnrichment.submissionDetails.buyerContact);
   console.log(`- Partnering Recommendation:`, glasgowEnrichment.fitAndRisks.partneringRecommendation);
 
   // Assertions for Glasgow
+  assert.strictEqual(glasgowRaw.ocid, 'ocds-h6vhtk-06cdb9', 'Glasgow canonical OCID must strictly match ocds-h6vhtk-06cdb9');
   assert.strictEqual(glasgowEnrichment.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
   assert.strictEqual(glasgowEnrichment.submissionDetails.isOpenForBid, false);
   assert.strictEqual(glasgowEnrichment.requirements.length, 0, 'Must NOT fabricate requirements for Glasgow');
   assert.strictEqual(glasgowEnrichment.isEligibilityPublished, false);
   assert.strictEqual(glasgowEnrichment.evaluationCriteria[0].isPublished, false);
+  assert.strictEqual(glasgowEnrichment.evaluationCriteria[0].factType, 'DERIVED_ABSENCE');
   assert.ok(glasgowEnrichment.scopeAndSpec.buyerRequiredServices.length > 0);
   assert.strictEqual(glasgowEnrichment.scopeAndSpec.buyerKeyDeliverables.length, 0);
   assert.ok(glasgowEnrichment.scopeAndSpec.creativeOpportunities.length > 0);
   glasgowEnrichment.documents.forEach(d => {
     assert.strictEqual(d.fileHash, null);
   });
+  assert.strictEqual(glasgowEnrichment.submissionDetails.marketEngagementForm?.isReferenced, true, 'Glasgow form must be detected');
+  assert.strictEqual(glasgowEnrichment.submissionDetails.marketEngagementForm?.sourceUrl, 'https://forms.office.com/e/vW0k03HeVY');
+  assert.strictEqual(glasgowEnrichment.submissionDetails.marketEngagementForm?.accessState, 'PUBLIC');
+  assert.strictEqual(glasgowEnrichment.submissionDetails.marketEngagementForm?.deadline, null);
   assert.ok(glasgowEnrichment.fitAndRisks.partneringRecommendation.includes('PARTNER'));
   console.log('[PASS] All Glasgow assertions passed.');
 
@@ -185,6 +198,7 @@ async function main() {
   const saved = await repo.save(tenderToSave);
   const loaded = await repo.getByCanonicalReference('068074-2026');
   assert.ok(loaded, 'Tender must load from repository');
+  assert.strictEqual(loaded.ocid, 'ocds-h6vhtk-06ce78', 'Loaded tender must retain canonical OCID');
   assert.strictEqual(loaded.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
   assert.strictEqual(loaded.requirements?.length, 0);
   assert.strictEqual(loaded.documents?.length, aberdeenEnrichment.documents.length);
@@ -192,9 +206,33 @@ async function main() {
   assert.ok(loaded.enrichment, 'Enrichment payload must persist');
   console.log('[PASS] Repository roundtrip verified successfully.');
 
+  // ====================================================
+  // TEST 4: IDENTITY_CONFLICT DETECTION
+  // ====================================================
+  console.log('\n----------------------------------------------------');
+  console.log('4. IDENTITY_CONFLICT VALIDATION');
+  console.log('----------------------------------------------------');
+
+  const { validateNoticeIdentity } = await import('../src/modules/public-tenders/connectors/find-a-tender');
+  const conflictCheck = validateNoticeIdentity(
+    { noticeId: '068074-2026', ocid: 'ocds-h6vhtk-WRONG_OCID' },
+    aberdeenRaw.rawPayload
+  );
+  assert.strictEqual(conflictCheck.status, 'IDENTITY_CONFLICT');
+  assert.strictEqual(conflictCheck.isConflict, true);
+  console.log('[PASS] validateNoticeIdentity flagged IDENTITY_CONFLICT on wrong OCID.');
+
+  const repoConflictSave = await repo.save({
+    canonicalReference: '068074-2026',
+    ocid: 'ocds-h6vhtk-CONFLICTING_TEST_OCID',
+  });
+  assert.strictEqual(repoConflictSave.identityConflict, true);
+  assert.strictEqual(repoConflictSave.ocid, 'ocds-h6vhtk-06ce78', 'Must preserve original canonical OCID on conflict');
+  console.log('[PASS] Repository save flagged IDENTITY_CONFLICT and preserved canonical OCID.');
+
   console.log('\n====================================================');
   console.log('ALL DUAL-NOTICE REAL-LIFE ENRICHMENT TESTS PASSED!');
-  console.log('====================================================');
+  console.log('====================================================\n');
 }
 
 main().catch(err => {

@@ -14,6 +14,10 @@ import {
   SourceEvidenceItem,
   DocumentCounts,
   CreativeOpportunity,
+  MarketEngagementFormStatus,
+  DocumentAccessState,
+  FactType,
+  EvidenceConfidence,
 } from '../types/tender';
 import { GeminiClient } from '@/shared/ai/gemini-client';
 
@@ -67,6 +71,121 @@ export class DetailEnrichmentService {
     }
 
     return 'OTHER';
+  }
+
+  /**
+   * Helper to extract sentence or line context around a target string.
+   */
+  static extractSentenceOrContext(fullText: string, target: string): string {
+    const idx = fullText.toLowerCase().indexOf(target.toLowerCase());
+    if (idx === -1) return '';
+    let start = fullText.lastIndexOf('\n', idx);
+    if (start === -1) start = fullText.lastIndexOf('. ', idx);
+    start = start === -1 ? 0 : start + 1;
+
+    let end = fullText.indexOf('\n', idx + target.length);
+    if (end === -1) end = fullText.indexOf('. ', idx + target.length);
+    if (end === -1) end = fullText.length;
+    else if (fullText[end] === '.') end += 1;
+
+    return fullText.slice(start, end).trim();
+  }
+
+  /**
+   * Rigorously detects market engagement forms from official notice text and portal links.
+   * Evidence-first: requires explicit forms URLs or explicit form phrases ("submission form",
+   * "response form", "complete the form", "questionnaire", "survey").
+   * Never triggers on the phrase "market engagement" alone.
+   */
+  static async detectMarketEngagementForm(
+    combinedText: string,
+    buyerProfileUrl?: string,
+    officialNoticeUrl?: string
+  ): Promise<MarketEngagementFormStatus | undefined> {
+    if (!combinedText) return undefined;
+
+    // 1. Check for explicit online forms URLs (Microsoft Forms, Google Forms, Typeform, etc.)
+    const formsUrlRegex = /(https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:forms\.office\.com|docs\.google\.com\/forms|forms\.gle|typeform\.com|surveymonkey\.com|smartsurvey\.co\.uk)[^\s"')><]+)/i;
+    const urlMatch = combinedText.match(formsUrlRegex);
+
+    if (urlMatch) {
+      const extractedUrl = urlMatch[1].replace(/[.,;:]+$/, '');
+      const textAround = DetailEnrichmentService.extractSentenceOrContext(combinedText, extractedUrl);
+
+      // Verify HTTP accessibility
+      let accessState: DocumentAccessState = 'ACCESS NOT YET VERIFIED';
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8500);
+        const res = await fetch(extractedUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+          signal: controller.signal,
+          redirect: 'follow',
+        });
+        clearTimeout(timeout);
+        if (res.ok || res.status < 400) {
+          accessState = 'PUBLIC';
+        } else if (res.status === 401 || res.status === 403) {
+          accessState = 'LOGIN REQUIRED';
+        }
+      } catch {
+        // Network timeout / offline fallback retains ACCESS NOT YET VERIFIED
+      }
+
+      return {
+        isReferenced: true,
+        statusText: accessState === 'PUBLIC'
+          ? 'MARKET ENGAGEMENT FORM REFERENCED — PUBLIC ACCESS'
+          : 'MARKET ENGAGEMENT FORM REFERENCED — ACCESS NOT YET VERIFIED',
+        formTitle: 'Market Research / Supplier Interest Form',
+        formType: 'Market research / supplier interest form',
+        sourceEvidenceText: textAround || `Notice contains direct online form link: ${extractedUrl}`,
+        sourceUrl: extractedUrl,
+        portalUrl: buyerProfileUrl || officialNoticeUrl,
+        accessState,
+        deadline: null, // Never invent deadline
+        deadlineText: null,
+        deadlineSource: null,
+        instructions: 'Suppliers should access the verified online questionnaire link to register interest and submit preliminary feedback.',
+      };
+    }
+
+    // 2. Check for explicit submission form evidence phrases (STRICT: "market engagement" ALONE does not match)
+    const formPhraseRegex = /\b(submission form|response form|complete the form|questionnaire|survey|expression of interest form)\b/i;
+    const phraseMatch = combinedText.match(formPhraseRegex);
+
+    if (phraseMatch) {
+      const evidenceSnippet = DetailEnrichmentService.extractSentenceOrContext(combinedText, phraseMatch[1]);
+
+      let deadlineSource: string | null = null;
+      if (/deadline stated in (?:the )?(?:submission )?form/i.test(combinedText)) {
+        deadlineSource = 'Stated in submission form (unspecified in notice text)';
+      }
+
+      const pcsMatch = combinedText.match(/(https?:\/\/(?:www\.)?publiccontractsscotland\.gov\.uk\/Search\/Search_Switch\.aspx\?ID=\d+)/i);
+      const extractedPortalUrl = pcsMatch ? pcsMatch[1].replace(/[.,;:]+$/, '') : (buyerProfileUrl || officialNoticeUrl);
+
+      return {
+        isReferenced: true,
+        statusText: 'MARKET ENGAGEMENT FORM REFERENCED — ACCESS NOT YET VERIFIED',
+        formTitle: 'Market Engagement Submission Form',
+        formType: 'Supplier market engagement response form',
+        sourceEvidenceText: evidenceSnippet || `Notice references ${phraseMatch[0]} for interested suppliers.`,
+        sourceUrl: extractedPortalUrl,
+        portalUrl: extractedPortalUrl,
+        accessState: 'ACCESS NOT YET VERIFIED',
+        deadline: null, // Never invent deadline
+        deadlineText: null,
+        deadlineSource,
+        instructions: 'Suppliers should access the official buyer portal (Public Contracts Scotland / Authority Portal) to review preliminary engagement notices and obtain the referenced submission form.',
+      };
+    }
+
+    // No form evidence found
+    return undefined;
   }
 
   /**
@@ -197,39 +316,62 @@ export class DetailEnrichmentService {
       });
     }
 
-    // E. Market Engagement Submission Form Investigation
-    const fullNoticeText = `${title} ${description}`.toLowerCase();
-    const isFormReferenced =
-      fullNoticeText.includes('market engagement') ||
-      fullNoticeText.includes('submission form') ||
-      fullNoticeText.includes('response form') ||
-      fullNoticeText.includes('questionnaire') ||
-      fullNoticeText.includes('survey');
+    // E. Real Market Engagement Form Detection (Evidence-First: URL or explicit form phrases)
+    const textSources = [
+      title,
+      description,
+      rawRecord?.description,
+      rawPayload?.description,
+      rawPayload?.tender?.description,
+      Array.isArray(rawPayload?.tender?.lots)
+        ? rawPayload.tender.lots.map((l: any) => `${l.title || ''} ${l.description || ''}`).join(' ')
+        : '',
+    ];
+    const combinedNoticeText = textSources.filter(Boolean).join('\n\n');
 
     let marketEngagementFormStatus = undefined;
-    if (isMarketEngagement && isFormReferenced) {
-      marketEngagementFormStatus = {
-        isReferenced: true,
-        statusText: 'MARKET ENGAGEMENT FORM REFERENCED — ACCESS NOT YET VERIFIED',
-        portalUrl: buyerProfileUrl || officialNoticeUrl,
-        accessState: 'ACCESS NOT YET VERIFIED' as const,
-        deadlineText: null, // Never invent an unstated deadline
-        instructions: 'Suppliers should access the official buyer portal (Public Contracts Scotland / Authority Portal) to review preliminary engagement notices and supplier response instructions.',
-      };
+    if (isMarketEngagement) {
+      marketEngagementFormStatus = await DetailEnrichmentService.detectMarketEngagementForm(
+        combinedNoticeText,
+        buyerProfileUrl,
+        officialNoticeUrl
+      );
+    }
 
-      documents.push({
-        id: `doc-${tender.id}-engagement-form`,
-        fileName: 'Supplier Market Engagement Response Form',
-        docType: 'form',
-        category: 'EXPECTED_FUTURE_DOCUMENT',
-        accessState: 'ACCESS NOT YET VERIFIED',
-        requiresLogin: true,
-        versionNumber: 0,
-        analysisStatus: 'not_applicable',
-        lastCheckedAt: new Date().toISOString(),
-        notes: 'Market engagement response form referenced in procurement notices. Access verification requires buyer portal login.',
-        fileHash: null,
-      });
+    if (marketEngagementFormStatus?.isReferenced) {
+      if (marketEngagementFormStatus.accessState === 'PUBLIC' && marketEngagementFormStatus.sourceUrl) {
+        documents.push({
+          id: `doc-${tender.id}-engagement-form`,
+          fileName: marketEngagementFormStatus.formTitle || 'Market Research / Supplier Interest Form',
+          docType: 'form',
+          category: 'PUBLISHED_DOCUMENT',
+          sourceUrl: marketEngagementFormStatus.sourceUrl,
+          downloadUrl: marketEngagementFormStatus.sourceUrl,
+          accessState: 'PUBLIC',
+          requiresLogin: false,
+          versionNumber: 1,
+          analysisStatus: 'analyzed',
+          lastCheckedAt: new Date().toISOString(),
+          notes: marketEngagementFormStatus.sourceEvidenceText || 'Online market engagement questionnaire / registration form.',
+          fileHash: null,
+        });
+      } else {
+        documents.push({
+          id: `doc-${tender.id}-engagement-form`,
+          fileName: marketEngagementFormStatus.formTitle || 'Supplier Market Engagement Response Form',
+          docType: 'form',
+          category: 'EXPECTED_FUTURE_DOCUMENT',
+          sourceUrl: marketEngagementFormStatus.sourceUrl || undefined,
+          downloadUrl: marketEngagementFormStatus.sourceUrl || undefined,
+          accessState: marketEngagementFormStatus.accessState,
+          requiresLogin: true,
+          versionNumber: 0,
+          analysisStatus: 'not_applicable',
+          lastCheckedAt: new Date().toISOString(),
+          notes: marketEngagementFormStatus.sourceEvidenceText || 'Market engagement response form referenced in procurement notices. Access verification requires buyer portal login.',
+          fileHash: null,
+        });
+      }
     }
 
     // Summary document counts
@@ -255,7 +397,17 @@ export class DetailEnrichmentService {
       sourceEvidence,
     } = synthesized;
 
-    const isEligibilityPublished = requirements.length > 0;
+    // Requirement Evidence Gate:
+    // A requirement is publishable as a buyer requirement ONLY if it contains:
+    // buyerRequirementText, source evidence citation, and valid buyer-fact provenance.
+    const verifiedRequirements = (requirements || []).filter((r) => {
+      const isBuyerFact = r.factType === 'EXPLICIT_BUYER_FACT' || r.factType === 'DOCUMENT_EXTRACTED_FACT';
+      const hasText = Boolean(r.buyerRequirementText && r.buyerRequirementText.trim().length > 0);
+      const hasEvidence = Boolean((r.evidenceText && r.evidenceText.trim().length > 0) || (r.sourceCitation && r.sourceCitation.trim().length > 0));
+      return isBuyerFact && hasText && hasEvidence;
+    });
+
+    const isEligibilityPublished = verifiedRequirements.length > 0;
     const eligibilityNoticeText = isEligibilityPublished
       ? undefined
       : 'Formal eligibility criteria have not yet been published in the currently available procurement material.';
@@ -273,7 +425,7 @@ export class DetailEnrichmentService {
       },
       documents,
       documentCounts,
-      requirements,
+      requirements: verifiedRequirements,
       isEligibilityPublished,
       eligibilityNoticeText,
       evaluationCriteria,
@@ -425,42 +577,77 @@ Deliver exact JSON conforming to this schema:
 
       if (result.success && result.data && result.data.scopeAndSpec) {
         const d = result.data;
-        const requirements: TenderRequirement[] = (d.requirements || []).map((r: any, idx: number) => ({
-          id: `req-${tender.id}-${idx + 1}`,
-          tenderId: tender.id,
-          category: r.category || 'other',
-          requirementName: r.requirementName || 'Requirement',
-          buyerRequirementText: r.buyerRequirementText || '',
-          sourceCitation: r.sourceCitation || 'Official Notice',
-          factType: (r.factType || 'EXPLICIT_BUYER_FACT') as any,
-          evidenceText: r.evidenceText || undefined,
-          adrasticCapabilityText: r.adrasticCapabilityText || 'Verification pending Knowledge Base confirmation',
-          status: r.status || 'UNKNOWN',
-          mandatory: Boolean(r.mandatory),
-        }));
+        const rawRequirements: TenderRequirement[] = (d.requirements || []).map((r: any, idx: number) => {
+          const rawFactType = r.factType;
+          // Fail-closed: default to UNKNOWN if omitted or unverified
+          const factType: FactType = (rawFactType === 'EXPLICIT_BUYER_FACT' || rawFactType === 'DOCUMENT_EXTRACTED_FACT')
+            ? rawFactType
+            : (rawFactType === 'AI_INTERPRETATION' ? 'AI_INTERPRETATION' : 'UNKNOWN');
+          const hasEvidence = Boolean((r.evidenceText && r.evidenceText.trim().length > 0) || (r.sourceCitation && r.sourceCitation.trim().length > 0));
+          return {
+            id: `req-${tender.id}-${idx + 1}`,
+            tenderId: tender.id,
+            category: r.category || 'other',
+            requirementName: r.requirementName || 'Requirement',
+            buyerRequirementText: r.buyerRequirementText || '',
+            sourceCitation: r.sourceCitation || '',
+            factType,
+            evidenceText: r.evidenceText || undefined,
+            adrasticCapabilityText: r.adrasticCapabilityText || 'Verification pending Knowledge Base confirmation',
+            status: (hasEvidence && factType !== 'UNKNOWN') ? (r.status || 'UNKNOWN') : 'UNKNOWN',
+            mandatory: Boolean(r.mandatory),
+          };
+        });
 
-        const evaluationCriteria: EnrichedEvaluationCriterion[] = (d.evaluationCriteria || []).map((c: any, idx: number) => ({
-          id: `crit-${tender.id}-${idx + 1}`,
-          criterion: c.criterion || 'Criterion',
-          weightingPercentage: typeof c.weightingPercentage === 'number' ? c.weightingPercentage : null,
-          description: c.description || '',
-          isPublished: Boolean(c.isPublished),
-          factType: (c.factType || 'EXPLICIT_BUYER_FACT') as any,
-        }));
+        // Requirement Evidence Gate:
+        // A requirement is publishable as a buyer requirement ONLY if it contains:
+        // buyerRequirementText, source evidence, and valid buyer-fact provenance.
+        const requirements: TenderRequirement[] = rawRequirements.filter((r) => {
+          const isBuyerFact = r.factType === 'EXPLICIT_BUYER_FACT' || r.factType === 'DOCUMENT_EXTRACTED_FACT';
+          const hasText = Boolean(r.buyerRequirementText && r.buyerRequirementText.trim().length > 0);
+          const hasEvidence = Boolean((r.evidenceText && r.evidenceText.trim().length > 0) || (r.sourceCitation && r.sourceCitation.trim().length > 0));
+          return isBuyerFact && hasText && hasEvidence;
+        });
+
+        const evaluationCriteria: EnrichedEvaluationCriterion[] = (d.evaluationCriteria || []).map((c: any, idx: number) => {
+          const isPublished = Boolean(c.isPublished);
+          const criterion = c.criterion || 'Criterion';
+          let factType: FactType;
+          if (!isPublished || criterion.toLowerCase().includes('not yet been published')) {
+            factType = 'DERIVED_ABSENCE';
+          } else if (c.factType === 'EXPLICIT_BUYER_FACT' || c.factType === 'DOCUMENT_EXTRACTED_FACT') {
+            factType = c.factType;
+          } else {
+            factType = 'UNKNOWN';
+          }
+          return {
+            id: `crit-${tender.id}-${idx + 1}`,
+            criterion,
+            weightingPercentage: typeof c.weightingPercentage === 'number' ? c.weightingPercentage : null,
+            description: c.description || '',
+            isPublished,
+            factType,
+          };
+        });
 
         const sourceEvidence: SourceEvidenceItem[] = (d.sourceEvidence || []).map((e: any, idx: number) => {
-          const factType = (e.factType || 'EXPLICIT_BUYER_FACT') as any;
-          const isVerified = factType === 'EXPLICIT_BUYER_FACT' || factType === 'DOCUMENT_EXTRACTED_FACT' || factType === 'PORTAL_FACT';
+          // Fail-closed: default to UNKNOWN if omitted
+          const factType: FactType = e.factType ? (e.factType as FactType) : 'UNKNOWN';
+          const hasTraceableEvidence = Boolean(e.source && (e.evidenceText || e.fact || e.value !== undefined));
+          const isBuyerOrPortal = factType === 'EXPLICIT_BUYER_FACT' || factType === 'DOCUMENT_EXTRACTED_FACT' || factType === 'PORTAL_FACT';
+          const isVerified = isBuyerOrPortal && hasTraceableEvidence && Boolean(e.isVerified !== false);
+          const confidence = isVerified ? (e.confidence || 'VERIFIED') : 'UNVERIFIED';
+
           return {
             id: `ev-${tender.id}-${idx + 1}`,
             topic: e.topic || 'Procurement Fact',
             fact: e.fact || '',
             factType,
-            value: e.value || null,
-            source: e.source || 'Official Find a Tender Release',
-            sourceType: e.sourceType || 'OFFICIAL_OCDS_NOTICE',
+            value: e.value !== undefined ? e.value : null,
+            source: e.source || '',
+            sourceType: e.sourceType || 'UNKNOWN',
             sourceUrl: e.sourceUrl || tender.officialNoticeUrl,
-            confidence: e.confidence || 'VERIFIED',
+            confidence,
             isVerified,
           };
         });
@@ -577,7 +764,7 @@ Deliver exact JSON conforming to this schema:
       }
     }
     const dedupedServices = Array.from(new Set(buyerRequiredServices)).slice(0, 8);
-    const finalServices = dedupedServices.length > 0 ? dedupedServices : ['Specialist contracted services stated in notice'];
+    const finalServices = dedupedServices;
 
     // Deliverables: In PME or early planning, buyers do NOT publish final contract deliverables in the PIN
     const buyerKeyDeliverables: string[] = [];
@@ -588,23 +775,23 @@ Deliver exact JSON conforming to this schema:
         opportunity: 'Promotional motion graphics and video campaign storytelling',
         rationale: 'If public outreach or awareness campaigns are commissioned, motion design translates complex messaging into engaging visual narratives.',
         label: 'AI OPPORTUNITY INTERPRETATION — NOT YET A PUBLISHED REQUIREMENT',
-        relevantCoreScope: finalServices[0] || 'Campaign promotion',
+        relevantCoreScope: finalServices[0] || 'Design and campaign communications',
       },
       {
         opportunity: 'Brand visual identity, guidelines, and digital asset templates',
         rationale: 'Provides consistent branding, accessibility standards, and reusable creative assets for public communications.',
         label: 'AI OPPORTUNITY INTERPRETATION — NOT YET A PUBLISHED REQUIREMENT',
-        relevantCoreScope: finalServices[1] || 'Digital promotion',
+        relevantCoreScope: finalServices[1] || 'Digital and brand communications',
       },
       {
         opportunity: 'Digital campaign creative, website UX/UI assets, and social media content',
         rationale: 'Drives digital engagement across multi-platform stakeholder touchpoints.',
         label: 'AI OPPORTUNITY INTERPRETATION — NOT YET A PUBLISHED REQUIREMENT',
-        relevantCoreScope: finalServices[2] || 'Stakeholder engagement',
+        relevantCoreScope: finalServices[2] || 'Stakeholder outreach',
       },
     ];
 
-    // Non-core scope detection
+    // Non-core scope detection: Strictly extracted from notice text
     const servicesOutsideCoreCapability: string[] = [];
     const lowerDesc = desc.toLowerCase();
     if (lowerDesc.includes('convention') || lowerDesc.includes('trade') || lowerDesc.includes('hotel') || lowerDesc.includes('booking')) {
@@ -615,9 +802,6 @@ Deliver exact JSON conforming to this schema:
     }
     if (lowerDesc.includes('consultancy') && lowerDesc.includes('sme')) {
       servicesOutsideCoreCapability.push('Direct 1-on-1 business accounting/finance consultancy');
-    }
-    if (servicesOutsideCoreCapability.length === 0) {
-      servicesOutsideCoreCapability.push('Prime contract management & administrative overhead operations');
     }
 
     // Important Dates
@@ -669,7 +853,7 @@ Deliver exact JSON conforming to this schema:
         weightingPercentage: null,
         description: 'Detailed award evaluation criteria and quality/price weightings will be published when the formal contract notice and ITT are released.',
         isPublished: false,
-        factType: 'EXPLICIT_BUYER_FACT',
+        factType: 'DERIVED_ABSENCE',
       },
     ];
 
