@@ -7,50 +7,90 @@ export interface FilterResult {
   matchedCpvs: string[];
   rejectedReason?: string;
   isNegativeMatch: boolean;
+  isExpired: boolean;
   qualification: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
 }
 
-const CREATIVE_KEYWORDS = [
+const CREATIVE_PHRASES = [
   'motion design',
   'motion graphics',
-  'animation',
   '2d animation',
   '3d animation',
   'explainer video',
   'video production',
+  'video editing',
   'brand identity',
   'visual identity',
-  'branding',
   'brand strategy',
   'graphic design',
   'creative agency',
   'creative studio',
-  'creative campaign',
+  'creative services',
+  'campaign creative',
+  'advertising creative',
   'content creation',
   'creative content',
   'digital campaign',
-  'infographics',
+  'marketing campaign',
+  'public information campaign',
+  'public outreach campaign',
+  'internal communications',
+  'change communications',
+  'information design',
+  'presentation design',
+  'digital design',
+  'website design',
+  'interactive digital experiences',
+  'training content',
+  'education content',
+  'social content',
   'art direction',
   'storyboard',
-  'media planning',
-  'media buying',
-  'public outreach campaign',
+  'infographics',
   'educational video',
 ];
 
+const CREATIVE_SINGLE_TOKENS = [
+  'animation',
+  'animator',
+  'branding',
+  'brand',
+  'explainer',
+  'film',
+  'video',
+  'communications',
+  'ux',
+  'ui',
+];
+
 const CREATIVE_CPVS = [
-  '79000000', // Business services
   '79340000', // Advertising and marketing services
   '79341000', // Advertising services
   '79341400', // Advertising campaign services
+  '79342000', // Marketing services
+  '79342100', // Direct marketing services
   '79822500', // Graphic design services
+  '79930000', // Speciality design services
+  '79933000', // Design support services
+  '79416000', // Public relations services
+  '92100000', // Motion picture and video services
   '92110000', // Motion picture and video tape production
-  '92111000', // Motion picture and video tape production services
+  '92111000', // Motion picture/video production
   '92111200', // Advertising, propaganda and information films and videos
-  '92111250', // Information film-production services
-  '92111260', // Training film-production services
+  '92111250', // Information film production
+  '92111260', // Information video production
   '92112000', // Motion-picture production services
   '72413000', // Website design services
+];
+
+const CREATIVE_CPV_PREFIXES = [
+  '7934',  // Advertising & marketing
+  '798225', // Graphic design
+  '7993',  // Speciality design & support
+  '79416', // Public relations
+  '9210',  // Motion picture & video
+  '9211',  // Motion picture & video production
+  '72413', // Website design
 ];
 
 const NEGATIVE_EXCLUSIONS = [
@@ -65,11 +105,13 @@ const NEGATIVE_EXCLUSIONS = [
   { pattern: 'road sign', reason: 'Highway / road signage' },
   { pattern: 'traffic sign', reason: 'Highway / road signage' },
   { pattern: 'web hosting only', reason: 'Pure infrastructure hosting' },
+  { pattern: 'server hosting', reason: 'Pure infrastructure hosting' },
   { pattern: 'engineering cad', reason: 'Engineering CAD / structural engineering' },
   { pattern: 'structural 3d', reason: 'Structural 3D engineering' },
   { pattern: 'security guard', reason: 'Manned guarding services' },
   { pattern: 'cleaning services', reason: 'Facilities cleaning' },
   { pattern: 'grounds maintenance', reason: 'Grounds maintenance' },
+  { pattern: 'catering services', reason: 'Catering / food supply' },
 ];
 
 export class DeterministicFilter {
@@ -77,7 +119,7 @@ export class DeterministicFilter {
     title?: string | null;
     description?: string;
     cpvCodes?: string[];
-    submissionDeadline?: string;
+    submissionDeadline?: string | null;
     noticeType?: string;
   }): FilterResult {
     const textToScan = `${candidate.title || ''} ${candidate.description || ''}`.toLowerCase();
@@ -92,32 +134,34 @@ export class DeterministicFilter {
           matchedCpvs: [],
           rejectedReason: `Negative keyword match: ${neg.reason} ('${neg.pattern}')`,
           isNegativeMatch: true,
+          isExpired: false,
           qualification: 'REJECT',
         };
       }
     }
 
-    // 2. Expired Deadline Check
+    // 2. Expired Deadline Evaluation
+    let isExpired = false;
     if (candidate.submissionDeadline) {
       const deadlineDate = new Date(candidate.submissionDeadline).getTime();
       if (!isNaN(deadlineDate) && deadlineDate < Date.now()) {
-        return {
-          passed: false,
-          score: 0,
-          matchedKeywords: [],
-          matchedCpvs: [],
-          rejectedReason: 'Tender submission deadline has already passed.',
-          isNegativeMatch: false,
-          qualification: 'REJECT',
-        };
+        isExpired = true;
       }
     }
 
-    // 3. Positive Keywords Match
+    // 3. Positive Keywords Match (Phrases + Word-bounded Tokens)
     const matchedKeywords: string[] = [];
-    for (const kw of CREATIVE_KEYWORDS) {
-      if (textToScan.includes(kw)) {
-        matchedKeywords.push(kw);
+    for (const phrase of CREATIVE_PHRASES) {
+      if (textToScan.includes(phrase)) {
+        matchedKeywords.push(phrase);
+      }
+    }
+
+    for (const token of CREATIVE_SINGLE_TOKENS) {
+      if (new RegExp(`\\b${token}\\b`, 'i').test(textToScan)) {
+        if (!matchedKeywords.includes(token)) {
+          matchedKeywords.push(token);
+        }
       }
     }
 
@@ -126,8 +170,12 @@ export class DeterministicFilter {
     if (candidate.cpvCodes && candidate.cpvCodes.length > 0) {
       for (const cpv of candidate.cpvCodes) {
         const cleanCpv = cpv.replace(/[^0-9]/g, '');
-        if (CREATIVE_CPVS.some((c) => cleanCpv.startsWith(c.slice(0, 4)))) {
-          matchedCpvs.push(cpv);
+        const matchesExact = CREATIVE_CPVS.some((c) => cleanCpv.startsWith(c.slice(0, 8)));
+        const matchesPrefix = CREATIVE_CPV_PREFIXES.some((p) => cleanCpv.startsWith(p));
+        if (matchesExact || matchesPrefix) {
+          if (!matchedCpvs.includes(cpv)) {
+            matchedCpvs.push(cpv);
+          }
         }
       }
     }
@@ -140,7 +188,9 @@ export class DeterministicFilter {
     const passed = matchedKeywords.length > 0 || matchedCpvs.length > 0;
 
     let qualification: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT' = 'REJECT';
-    if (score >= 50 || matchedKeywords.length >= 2) {
+    if (isExpired) {
+      qualification = 'REJECT';
+    } else if (score >= 50 || matchedKeywords.length >= 2) {
       qualification = 'STRONG';
     } else if (score >= 25 || matchedKeywords.length >= 1 || matchedCpvs.length >= 1) {
       qualification = 'POSSIBLE';
@@ -149,11 +199,13 @@ export class DeterministicFilter {
     }
 
     return {
-      passed,
+      passed: passed && !isExpired,
       score,
       matchedKeywords,
       matchedCpvs,
+      rejectedReason: isExpired ? 'Tender submission deadline has already passed.' : undefined,
       isNegativeMatch: false,
+      isExpired,
       qualification,
     };
   }

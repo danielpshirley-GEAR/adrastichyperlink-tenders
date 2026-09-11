@@ -17,13 +17,21 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const scanType = (body.scanType || 'quick').toLowerCase();
-    const maxPages = typeof body.maxPages === 'number' ? body.maxPages : (scanType === 'full' ? 10 : 3);
+    const stage = (body.stage || 'tender').toLowerCase();
+    const cursorUrl = body.cursorUrl || null;
+    const maxPages = typeof body.maxPages === 'number' ? body.maxPages : (scanType === 'full' ? 10 : (scanType === 'paged' ? 1 : 3));
 
     const fts = new FindATenderConnector();
     const sourceRecord = await sourcesRepo.getById('find_a_tender');
 
     let scanResult;
-    if (scanType === 'quick') {
+    if (scanType === 'paged' || cursorUrl) {
+      if (stage === 'planning') {
+        scanResult = await fts.scanPipeline({ maxPages, cursorUrl });
+      } else {
+        scanResult = await fts.scanLiveNotices({ maxPages, cursorUrl });
+      }
+    } else if (scanType === 'quick') {
       const sinceDate = sourceRecord?.lastSuccessfulScanAt
         ? new Date(sourceRecord.lastSuccessfulScanAt)
         : new Date(Date.now() - 3 * 86400000);
@@ -44,6 +52,9 @@ export async function POST(req: Request) {
         paginationComplete: liveRes.paginationComplete && pipeRes.paginationComplete,
         truncatedBySafetyLimit: liveRes.truncatedBySafetyLimit || pipeRes.truncatedBySafetyLimit,
         nextCursorPresent: liveRes.nextCursorPresent || pipeRes.nextCursorPresent,
+        nextCursorUrl: liveRes.nextCursorUrl || pipeRes.nextCursorUrl,
+        earliestDate: pipeRes.earliestDate && liveRes.earliestDate ? (pipeRes.earliestDate < liveRes.earliestDate ? pipeRes.earliestDate : liveRes.earliestDate) : (liveRes.earliestDate || pipeRes.earliestDate),
+        latestDate: pipeRes.latestDate && liveRes.latestDate ? (pipeRes.latestDate > liveRes.latestDate ? pipeRes.latestDate : liveRes.latestDate) : (liveRes.latestDate || pipeRes.latestDate),
       };
     } else {
       // 'full'
@@ -57,6 +68,7 @@ export async function POST(req: Request) {
     const uniqueOcidsSet = new Set<string>();
 
     let expiredNotices = 0;
+    let pipelineNotices = 0;
     let deterministicallyRejected = 0;
     let geminiAnalysed = 0;
     let geminiRequested = 0;
@@ -74,11 +86,19 @@ export async function POST(req: Request) {
     let urlVerificationFailures = 0;
     let processingErrors = 0;
 
+    const candidatesProcessed: any[] = [];
+
     // Process all candidate releases
     for (const candidate of candidates) {
       try {
         uniqueNoticesSet.add(candidate.noticeId);
         if (candidate.ocid) uniqueOcidsSet.add(candidate.ocid);
+
+        const noticeTag = (candidate.rawPayload as any)?.tag?.[0] || (stage === 'planning' ? 'planning' : 'tender');
+        const isPlanningNotice = stage === 'planning' || noticeTag === 'planning';
+        if (isPlanningNotice) {
+          pipelineNotices++;
+        }
 
         // 1. Record raw notice in database with content hashing & versioning
         const rawRecordResult = await sourcesRepo.recordSourceNotice(
@@ -89,7 +109,7 @@ export async function POST(req: Request) {
           null, // linked after tender save
           candidate.publishedAt,
           candidate.submissionDeadline,
-          (candidate.rawPayload as any)?.tag?.[0] || 'tender',
+          noticeTag,
           candidate.ocid
         );
 
@@ -114,10 +134,10 @@ export async function POST(req: Request) {
           cpvCodes: candidate.cpvCodes,
           valueAmount: candidate.valueAmount,
           submissionDeadline: candidate.submissionDeadline || undefined,
-          noticeType: 'tender',
+          noticeType: isPlanningNotice ? 'planning' : 'tender',
         });
 
-        if (classification.deterministic.relevance === 'REJECT') {
+        if (classification.deterministic.relevance === 'REJECT' && !classification.deterministic.isExpired) {
           geminiSkippedByDeterministicFilter++;
           rejectCount++;
           deterministicallyRejected++;
@@ -197,6 +217,8 @@ export async function POST(req: Request) {
           serviceTags: classification.final.serviceMatches as any,
           isArchived,
           archivedReason,
+          evaluationCriteria: classification.final.analysis ? [{ criterion: classification.final.analysis.whatTheyAreBuying, weightingPercentage: 100 }] : [],
+          geminiAnalysis: classification.final.analysis,
         });
 
         if (isNewTender) {
@@ -224,6 +246,29 @@ export async function POST(req: Request) {
         else if (classification.final.relevance === 'POSSIBLE') possibleCount++;
         else if (classification.final.relevance === 'REJECT') rejectCount++;
         else weakCount++;
+
+        candidatesProcessed.push({
+          noticeId: candidate.noticeId,
+          ocid: candidate.ocid,
+          title: candidate.title,
+          buyer: buyer?.name || candidate.buyerName,
+          valueAmount: candidate.valueAmount,
+          valueDescription: saved.valueDescription,
+          publishedAt: candidate.publishedAt,
+          submissionDeadline: candidate.submissionDeadline,
+          deterministicRelevance: classification.deterministic.relevance,
+          aiRelevance: classification.ai.relevance,
+          finalQualification: classification.final.relevance,
+          recommendation: classification.final.recommendation || 'WATCH',
+          reason: classification.final.reason,
+          officialNoticeUrl: candidate.officialNoticeUrl,
+          isExpired,
+          isPlanningNotice,
+          lifecycleStatus,
+          isArchived,
+          verificationGrade: verification.grade,
+          analysis: classification.final.analysis,
+        });
       } catch (err: any) {
         processingErrors++;
         console.error(`[Scan] Error processing notice ${candidate.noticeId}:`, err.message);
@@ -291,6 +336,7 @@ export async function POST(req: Request) {
       status: finalScanStatus,
       message: statusMessage,
       scanType,
+      stage,
       source: 'Find a Tender (FTS)',
       sourceHealth: healthStatus,
       pagesFetched: scanResult.pagesFetched,
@@ -298,6 +344,7 @@ export async function POST(req: Request) {
       uniqueNotices: uniqueNoticesSet.size,
       uniqueOcids: uniqueOcidsSet.size,
       expiredNotices,
+      pipelineNotices,
       deterministicallyRejected,
       geminiAnalysed,
       geminiMetrics: {
@@ -310,6 +357,9 @@ export async function POST(req: Request) {
         paginationComplete: scanResult.paginationComplete ?? !isTruncated,
         truncatedBySafetyLimit: isTruncated,
         nextCursorPresent: scanResult.nextCursorPresent ?? false,
+        nextCursorUrl: scanResult.nextCursorUrl || null,
+        earliestDate: scanResult.earliestDate || null,
+        latestDate: scanResult.latestDate || null,
       },
       strongCount,
       possibleCount,
@@ -323,6 +373,7 @@ export async function POST(req: Request) {
       durationMs,
       apiRequestsMade: scanResult.apiRequestsMade,
       rateLimitRetries: scanResult.rateLimitRetries,
+      candidatesProcessed,
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {

@@ -68,6 +68,7 @@ export interface TenderSummary {
   bidDecisionState?: BidDecisionType | 'UNDECIDED';
   description?: string;
   evaluationCriteria?: Array<{ criterion: string; weightingPercentage: number }>;
+  geminiAnalysis?: any;
   requirements?: TenderRequirement[];
   documents?: TenderDocumentItem[];
 }

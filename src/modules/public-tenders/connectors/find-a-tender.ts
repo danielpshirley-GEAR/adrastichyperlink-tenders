@@ -5,6 +5,8 @@ import { UrlVerifier } from '../services/url-verifier';
 export interface PagedScanOptions {
   maxPages?: number;
   safetyLimitNotices?: number;
+  cursorUrl?: string | null;
+  stage?: 'tender' | 'planning';
 }
 
 export class FindATenderConnector implements ProcurementConnector {
@@ -20,6 +22,9 @@ export class FindATenderConnector implements ProcurementConnector {
    * paginating through all available pages via cursor links.
    */
   async scanNewNotices(since?: Date, options: PagedScanOptions = {}): Promise<ScanResult> {
+    if (options.cursorUrl) {
+      return this.executeOcdsPagedFetch(options.cursorUrl, options);
+    }
     const params = new URLSearchParams();
     params.set('stages', 'tender');
     params.set('limit', '100');
@@ -37,7 +42,7 @@ export class FindATenderConnector implements ProcurementConnector {
    * paginating through cursor pages up to safety limit.
    */
   async scanLiveNotices(options: PagedScanOptions = {}): Promise<ScanResult> {
-    const url = `${this.ocdsEndpoint}?stages=tender&limit=100`;
+    const url = options.cursorUrl || `${this.ocdsEndpoint}?stages=tender&limit=100`;
     return this.executeOcdsPagedFetch(url, options);
   }
 
@@ -45,7 +50,7 @@ export class FindATenderConnector implements ProcurementConnector {
    * Retrieves early market engagement and pipeline procurement notices (planning stage).
    */
   async scanPipeline(options: PagedScanOptions = {}): Promise<ScanResult> {
-    const url = `${this.ocdsEndpoint}?stages=planning&limit=100`;
+    const url = options.cursorUrl || `${this.ocdsEndpoint}?stages=planning&limit=100`;
     return this.executeOcdsPagedFetch(url, options);
   }
 
@@ -175,6 +180,10 @@ export class FindATenderConnector implements ProcurementConnector {
     const truncatedBySafetyLimit = Boolean(currentUrl && (pagesFetched >= maxPages || candidates.length >= safetyLimitNotices));
     const paginationComplete = !currentUrl;
 
+    const dates = candidates.map((c) => c.publishedAt).filter(Boolean) as string[];
+    const earliestDate = dates.length > 0 ? dates.reduce((min, d) => (d < min ? d : min), dates[0]) : null;
+    const latestDate = dates.length > 0 ? dates.reduce((max, d) => (d > max ? d : max), dates[0]) : null;
+
     return {
       sourceId: this.id,
       scannedAt,
@@ -188,6 +197,9 @@ export class FindATenderConnector implements ProcurementConnector {
       paginationComplete,
       truncatedBySafetyLimit,
       nextCursorPresent,
+      nextCursorUrl: currentUrl,
+      earliestDate,
+      latestDate,
     };
   }
 

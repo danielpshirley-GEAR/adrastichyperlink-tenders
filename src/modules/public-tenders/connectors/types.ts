@@ -55,6 +55,9 @@ export interface ScanResult {
   paginationComplete?: boolean;
   truncatedBySafetyLimit?: boolean;
   nextCursorPresent?: boolean;
+  nextCursorUrl?: string | null;
+  earliestDate?: string | null;
+  latestDate?: string | null;
 }
 
 export interface ProcurementConnector {
