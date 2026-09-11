@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { FindATenderConnector } from '@/modules/public-tenders/connectors/find-a-tender';
 import { TenderClassifier } from '@/modules/public-tenders/services/tender-classifier';
+import { DeterministicFilter } from '@/modules/public-tenders/services/deterministic-filter';
 import { UrlVerifier } from '@/modules/public-tenders/services/url-verifier';
 import { getTendersRepository, getSourcesRepository, getBuyersRepository } from '@/shared/database/db';
 import { SourceHealthStatus } from '@/shared/database/repositories/sources';
@@ -100,7 +101,33 @@ export async function POST(req: Request) {
           pipelineNotices++;
         }
 
-        // 1. Record raw notice in database with content hashing & versioning
+        // 1. Fast in-memory deterministic filter
+        const deterministic = DeterministicFilter.evaluate({
+          title: candidate.title,
+          description: candidate.description,
+          cpvCodes: candidate.cpvCodes,
+          submissionDeadline: candidate.submissionDeadline,
+          noticeType: isPlanningNotice ? 'planning' : 'tender',
+        });
+
+        // If not a creative match, skip database writes and LLM calls
+        if (deterministic.isNegativeMatch || (deterministic.qualification === 'REJECT' && !deterministic.isExpired)) {
+          geminiSkippedByDeterministicFilter++;
+          rejectCount++;
+          deterministicallyRejected++;
+          continue;
+        }
+
+        // 2. Check if deadline is already expired
+        const isExpired = candidate.submissionDeadline
+          ? new Date(candidate.submissionDeadline).getTime() < Date.now()
+          : false;
+
+        if (isExpired) {
+          expiredNotices++;
+        }
+
+        // 3. Record raw notice in database with content hashing & versioning for all genuine candidates
         const rawRecordResult = await sourcesRepo.recordSourceNotice(
           'find_a_tender',
           candidate.noticeId,
@@ -117,16 +144,7 @@ export async function POST(req: Request) {
           duplicatesCount++;
         }
 
-        // 2. Check if deadline is already expired
-        const isExpired = candidate.submissionDeadline
-          ? new Date(candidate.submissionDeadline).getTime() < Date.now()
-          : false;
-
-        if (isExpired) {
-          expiredNotices++;
-        }
-
-        // 3. Classify candidate with distinct deterministic and Gemini evaluation
+        // 4. Classify candidate with distinct deterministic and Gemini evaluation
         const classification = await TenderClassifier.classify({
           title: candidate.title,
           buyer: candidate.buyerName,
@@ -136,13 +154,6 @@ export async function POST(req: Request) {
           submissionDeadline: candidate.submissionDeadline || undefined,
           noticeType: isPlanningNotice ? 'planning' : 'tender',
         });
-
-        if (classification.deterministic.relevance === 'REJECT' && !classification.deterministic.isExpired) {
-          geminiSkippedByDeterministicFilter++;
-          rejectCount++;
-          deterministicallyRejected++;
-          continue;
-        }
 
         if (classification.ai.status === 'RUN') {
           geminiRequested++;
