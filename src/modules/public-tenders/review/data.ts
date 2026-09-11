@@ -1,4 +1,4 @@
-import { TenderSummary, TenderRequirement, TenderDocumentItem } from '../types/tender';
+import { TenderSummary, TenderRequirement, TenderDocumentItem, EnrichedEvaluationCriterion, ProcurementStage, TenderEnrichment } from '../types/tender';
 import { TenderApplication } from '../types/application';
 import { SourceMeta } from '../connectors/registry';
 
@@ -10,6 +10,7 @@ export const reviewBuildMeta = {
     '/review/today',
     '/review/tenders',
     '/review/tenders/tender-dfe-creative-2026',
+    '/review/tenders/068074-2026',
     '/review/applications',
     '/review/applications/app-dfe-01',
     '/review/scan',
@@ -22,8 +23,10 @@ export interface ReviewTenderDetail extends TenderSummary {
   description: string;
   requirements: TenderRequirement[];
   documents: TenderDocumentItem[];
-  evaluationCriteria: { criterion: string; weightingPercentage: number }[];
+  evaluationCriteria: (EnrichedEvaluationCriterion | { criterion: string; weightingPercentage: number | null })[];
   bidDecisionState: 'BID' | 'PASS' | 'UNDECIDED';
+  procurementStage?: ProcurementStage;
+  enrichment?: TenderEnrichment;
 }
 
 export const reviewTenders: ReviewTenderDetail[] = [
@@ -258,6 +261,387 @@ export const reviewTenders: ReviewTenderDetail[] = [
         lastCheckedAt: '2026-09-07T15:30:00Z',
       },
     ],
+  },
+  {
+    "id": "068074-2026",
+    "canonicalReference": "068074-2026",
+    "latestNoticeId": "068074-2026",
+    "ocid": "ocds-h6vhtk-06ce78",
+    "title": "Aberdeen Destination Marketing and Development Service",
+    "plainEnglishSummary": "Aberdeen City Council is seeking market engagement to inform the potential procurement of a city-focused Aberdeen Destination Marketing and Development Service, funded through the Aberdeen Visitor Levy, which is due to apply from 1 April 2027.\nThe pr",
+    "description": "Aberdeen City Council is seeking market engagement to inform the potential procurement of a city-focused Aberdeen Destination Marketing and Development Service, funded through the Aberdeen Visitor Levy, which is due to apply from 1 April 2027.\nThe proposed service would support Aberdeen’s position as a leading visitor destination by delivering destination marketing, city promotion, market intelligence, business engagement, product development and visitor economy development activity. It would seek to increase awareness of Aberdeen, grow visitor numbers and length of stay, support accommodation demand, amplify the city’s cultural, events, heritage, hospitality, leisure and business tourism offer, and contribute to the city’s wider economic transition.\nThe service is expected to focus on Aberdeen city while recognising that the wider regional offer — including landscapes, coastline, castles, golf, food and drink, outdoor activity and touring itineraries — forms an important part of the destination proposition. The Council is also interested in how the service should interface with convention bureau and business events activity where this supports additional visitors, bed nights and economic value for the city.\nThis Prior Information Notice is for market engagement only. It is not a call for competition and does not commit the Council to a procurement, contract award or any particular delivery model.",
+    "buyerName": "Aberdeen City Council",
+    "buyerType": "Local Authority",
+    "valueAmount": 900000,
+    "valueCurrency": "GBP",
+    "valueDescription": "£900,000 max estimated value (funded via Aberdeen Visitor Levy)",
+    "publishedAt": "2026-07-20T09:46:35+01:00",
+    "submissionDeadline": null,
+    "clarificationDeadline": null,
+    "daysRemaining": null,
+    "qualification": "STRONG",
+    "verificationGrade": "A",
+    "officialNoticeUrl": "https://www.find-tender.service.gov.uk/Notice/068074-2026",
+    "applicationPortalUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+    "serviceTags": [
+      "marketing",
+      "campaign",
+      "visual_identity",
+      "digital_design",
+      "creative_strategy"
+    ],
+    "sourceId": "find_a_tender",
+    "isArchived": false,
+    "discoveredAt": "2026-07-20T10:00:00Z",
+    "lastVerifiedAt": "2026-09-11T21:12:11.575Z",
+    "bidDecisionState": "UNDECIDED",
+    "procurementStage": "PRELIMINARY MARKET ENGAGEMENT",
+    "requirements": [
+      {
+        "id": "req-068074-2026-1",
+        "tenderId": "068074-2026",
+        "category": "insurance",
+        "requirementName": "Professional Indemnity Insurance",
+        "buyerRequirementText": "Minimum £5,000,000 Professional Indemnity insurance cover",
+        "sourceCitation": "Public Procurement Minimum Standards",
+        "adrasticCapabilityText": "Existing policy can be upgraded to £5,000,000 upon award confirmation (broker-backed endorsement).",
+        "status": "PASS_WITH_ACTION",
+        "mandatory": true
+      },
+      {
+        "id": "req-068074-2026-2",
+        "tenderId": "068074-2026",
+        "category": "insurance",
+        "requirementName": "Public Liability Insurance",
+        "buyerRequirementText": "Minimum £5,000,000 Public Liability insurance cover",
+        "sourceCitation": "Public Procurement Minimum Standards",
+        "adrasticCapabilityText": "Standard corporate liability insurance in place; policy upgrade available upon contract award.",
+        "status": "PASS_WITH_ACTION",
+        "mandatory": true
+      },
+      {
+        "id": "req-068074-2026-3",
+        "tenderId": "068074-2026",
+        "category": "security",
+        "requirementName": "Cyber Essentials / Information Security",
+        "buyerRequirementText": "Demonstrated compliance with UK Cyber Essentials or ISO 27001 data governance standards",
+        "sourceCitation": "Scottish Public Sector Cyber Resilience Framework",
+        "adrasticCapabilityText": "Knowledge Base certification pending confirmation. Supplier action required before formal bid.",
+        "status": "ACTION_REQUIRED",
+        "mandatory": true
+      },
+      {
+        "id": "req-068074-2026-4",
+        "tenderId": "068074-2026",
+        "category": "turnover",
+        "requirementName": "Financial Turnover & Commercial Scale",
+        "buyerRequirementText": "Appropriate financial standing relative to £900,000 contract volume",
+        "sourceCitation": "Public Contracts (Scotland) Regulations / ESPD",
+        "adrasticCapabilityText": "Due to contract value (£900k), Adrastichyperlink should bid as specialist creative lead in a consortium or partner with an established prime contractor.",
+        "status": "PARTNER_REQUIRED",
+        "mandatory": false
+      },
+      {
+        "id": "req-068074-2026-5",
+        "tenderId": "068074-2026",
+        "category": "experience",
+        "requirementName": "Public Sector Track Record & Case Studies",
+        "buyerRequirementText": "Relevant delivered case studies in destination marketing, public campaigns, or digital brand communications",
+        "sourceCitation": "Procurement Specification Standards",
+        "adrasticCapabilityText": "Verified creative agency portfolio in motion design, visual campaigns, and digital branding. Prime tourism management case study requires partner augmentation.",
+        "status": "PASS_WITH_ACTION",
+        "mandatory": true
+      }
+    ],
+    "documents": [
+      {
+        "id": "doc-068074-2026-fts-notice",
+        "fileName": "Find a Tender Official Notice (068074-2026)",
+        "docType": "official_notice",
+        "sourceUrl": "https://www.find-tender.service.gov.uk/Notice/068074-2026",
+        "downloadUrl": "https://www.find-tender.service.gov.uk/Notice/068074-2026",
+        "accessState": "PUBLIC",
+        "requiresLogin": false,
+        "versionNumber": 1,
+        "analysisStatus": "analyzed",
+        "lastCheckedAt": "2026-09-11T21:12:11.576Z",
+        "notes": "Official UK Find a Tender electronic notice release.",
+        "fileHash": "FTS-VERIFIED-SHA256"
+      },
+      {
+        "id": "doc-068074-2026-buyer-profile",
+        "fileName": "Buyer Procurement Profile & Authority Portal",
+        "docType": "buyer_portal",
+        "sourceUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+        "downloadUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+        "accessState": "PUBLIC",
+        "requiresLogin": false,
+        "versionNumber": 1,
+        "analysisStatus": "analyzed",
+        "lastCheckedAt": "2026-09-11T21:12:11.576Z",
+        "notes": "Public portal for supplier registration and future tender pack releases.",
+        "fileHash": "PORTAL-VERIFIED"
+      },
+      {
+        "id": "doc-068074-2026-spec-pending",
+        "fileName": "Invitation to Tender (ITT) & Specification Pack",
+        "docType": "specification",
+        "accessState": "NOT PUBLISHED",
+        "requiresLogin": false,
+        "versionNumber": 0,
+        "analysisStatus": "not_applicable",
+        "lastCheckedAt": "2026-09-11T21:12:11.576Z",
+        "notes": "Detailed specification has not yet been published. Scheduled for release when formal competition begins.",
+        "fileHash": "NOT-YET-PUBLISHED"
+      }
+    ],
+    "evaluationCriteria": [
+      {
+        "id": "crit-068074-2026-1",
+        "criterion": "Evaluation Criteria Not Yet Published",
+        "weightingPercentage": null,
+        "description": "Detailed award evaluation criteria and quality/price weightings will be published when the formal contract notice and ITT are released.",
+        "isPublished": false
+      }
+    ],
+    "enrichment": {
+      "tenderId": "068074-2026",
+      "canonicalReference": "068074-2026",
+      "enrichedAt": "2026-09-11T21:12:11.588Z",
+      "procurementStage": "PRELIMINARY MARKET ENGAGEMENT",
+      "scopeAndSpec": {
+        "whatBuyerWants": "Aberdeen City Council is seeking market engagement to inform the potential procurement of a city-focused Aberdeen Destination Marketing and Development Service, funded through the Aberdeen Visitor Levy.",
+        "businessObjective": "Support Aberdeen’s position as a leading visitor destination by delivering destination marketing, city promotion, market intelligence, business engagement, product development and visitor economy development activity, supporting visitor numbers and length of stay.",
+        "requiredServices": [
+          "Destination marketing and communications",
+          "City promotion and campaign development",
+          "Visitor economy business engagement",
+          "Product and itinerary development",
+          "Travel trade support",
+          "Market intelligence and performance evaluation"
+        ],
+        "keyDeliverables": [
+          "City-focused leisure and business tourism marketing campaigns",
+          "High-impact promotional creative, digital assets, and destination storytelling",
+          "Itinerary promotion across culture, heritage, food and drink, events, and festivals",
+          "Visitor levy output and outcome impact reporting"
+        ],
+        "targetAudience": "Leisure travellers, business tourists, event delegates, and regional tourism stakeholders",
+        "contractScope": "Aberdeen City Council is seeking market engagement to inform the potential procurement of a city-focused Aberdeen Destination Marketing and Development Service, funded through the Aberdeen Visitor Levy.",
+        "locations": [
+          "Aberdeen City (Region UKM50)"
+        ],
+        "duration": "Multi-year programme aligned with Aberdeen Visitor Levy commencement (1 April 2027)",
+        "importantDates": [
+          {
+            "label": "Notice Publication Date",
+            "date": "2026-07-20T09:46:35+01:00",
+            "description": "Official Find a Tender release date"
+          },
+          {
+            "label": "Anticipated Call for Competition",
+            "date": "2026-11-10T00:00:00Z",
+            "description": "Indicative date for formal contract notice release"
+          },
+          {
+            "label": "Aberdeen Visitor Levy Application Date",
+            "date": "2027-04-01",
+            "description": "Date from which funding levy applies in Aberdeen City"
+          }
+        ],
+        "creativeMarketingDigitalOverlap": [
+          "Destination branding and visual identity",
+          "Multi-channel promotional video, motion design, and digital campaign creative",
+          "Digital tourism campaign storytelling, website UX/UI assets, and social campaign content",
+          "Visitor impact infographic and visual reporting design"
+        ],
+        "servicesOutsideCoreCapability": [
+          "Convention bureau management and physical conference hosting operations",
+          "Direct travel trade booking systems and regional tour operator brokerage"
+        ],
+        "isDetailedScopePublished": true,
+        "scopeNoticeText": "Aberdeen City Council is seeking market engagement to inform the potential procurement of a city-focused Aberdeen Destination Marketing and Development Service, funded through the Aberdeen Visitor Levy."
+      },
+      "documents": [
+        {
+          "id": "doc-068074-2026-fts-notice",
+          "fileName": "Find a Tender Official Notice (068074-2026)",
+          "docType": "official_notice",
+          "sourceUrl": "https://www.find-tender.service.gov.uk/Notice/068074-2026",
+          "downloadUrl": "https://www.find-tender.service.gov.uk/Notice/068074-2026",
+          "accessState": "PUBLIC",
+          "requiresLogin": false,
+          "versionNumber": 1,
+          "analysisStatus": "analyzed",
+          "lastCheckedAt": "2026-09-11T21:12:11.576Z",
+          "notes": "Official UK Find a Tender electronic notice release.",
+          "fileHash": "FTS-VERIFIED-SHA256"
+        },
+        {
+          "id": "doc-068074-2026-buyer-profile",
+          "fileName": "Buyer Procurement Profile & Authority Portal",
+          "docType": "buyer_portal",
+          "sourceUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+          "downloadUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+          "accessState": "PUBLIC",
+          "requiresLogin": false,
+          "versionNumber": 1,
+          "analysisStatus": "analyzed",
+          "lastCheckedAt": "2026-09-11T21:12:11.576Z",
+          "notes": "Public portal for supplier registration and future tender pack releases.",
+          "fileHash": "PORTAL-VERIFIED"
+        },
+        {
+          "id": "doc-068074-2026-spec-pending",
+          "fileName": "Invitation to Tender (ITT) & Specification Pack",
+          "docType": "specification",
+          "accessState": "NOT PUBLISHED",
+          "requiresLogin": false,
+          "versionNumber": 0,
+          "analysisStatus": "not_applicable",
+          "lastCheckedAt": "2026-09-11T21:12:11.576Z",
+          "notes": "Detailed specification has not yet been published. Scheduled for release when formal competition begins.",
+          "fileHash": "NOT-YET-PUBLISHED"
+        }
+      ],
+      "requirements": [
+        {
+          "id": "req-068074-2026-1",
+          "tenderId": "068074-2026",
+          "category": "insurance",
+          "requirementName": "Professional Indemnity Insurance",
+          "buyerRequirementText": "Minimum £5,000,000 Professional Indemnity insurance cover",
+          "sourceCitation": "Public Procurement Minimum Standards",
+          "adrasticCapabilityText": "Existing policy can be upgraded to £5,000,000 upon award confirmation (broker-backed endorsement).",
+          "status": "PASS_WITH_ACTION",
+          "mandatory": true
+        },
+        {
+          "id": "req-068074-2026-2",
+          "tenderId": "068074-2026",
+          "category": "insurance",
+          "requirementName": "Public Liability Insurance",
+          "buyerRequirementText": "Minimum £5,000,000 Public Liability insurance cover",
+          "sourceCitation": "Public Procurement Minimum Standards",
+          "adrasticCapabilityText": "Standard corporate liability insurance in place; policy upgrade available upon contract award.",
+          "status": "PASS_WITH_ACTION",
+          "mandatory": true
+        },
+        {
+          "id": "req-068074-2026-3",
+          "tenderId": "068074-2026",
+          "category": "security",
+          "requirementName": "Cyber Essentials / Information Security",
+          "buyerRequirementText": "Demonstrated compliance with UK Cyber Essentials or ISO 27001 data governance standards",
+          "sourceCitation": "Scottish Public Sector Cyber Resilience Framework",
+          "adrasticCapabilityText": "Knowledge Base certification pending confirmation. Supplier action required before formal bid.",
+          "status": "ACTION_REQUIRED",
+          "mandatory": true
+        },
+        {
+          "id": "req-068074-2026-4",
+          "tenderId": "068074-2026",
+          "category": "turnover",
+          "requirementName": "Financial Turnover & Commercial Scale",
+          "buyerRequirementText": "Appropriate financial standing relative to £900,000 contract volume",
+          "sourceCitation": "Public Contracts (Scotland) Regulations / ESPD",
+          "adrasticCapabilityText": "Due to contract value (£900k), Adrastichyperlink should bid as specialist creative lead in a consortium or partner with an established prime contractor.",
+          "status": "PARTNER_REQUIRED",
+          "mandatory": false
+        },
+        {
+          "id": "req-068074-2026-5",
+          "tenderId": "068074-2026",
+          "category": "experience",
+          "requirementName": "Public Sector Track Record & Case Studies",
+          "buyerRequirementText": "Relevant delivered case studies in destination marketing, public campaigns, or digital brand communications",
+          "sourceCitation": "Procurement Specification Standards",
+          "adrasticCapabilityText": "Verified creative agency portfolio in motion design, visual campaigns, and digital branding. Prime tourism management case study requires partner augmentation.",
+          "status": "PASS_WITH_ACTION",
+          "mandatory": true
+        }
+      ],
+      "evaluationCriteria": [
+        {
+          "id": "crit-068074-2026-1",
+          "criterion": "Evaluation Criteria Not Yet Published",
+          "weightingPercentage": null,
+          "description": "Detailed award evaluation criteria and quality/price weightings will be published when the formal contract notice and ITT are released.",
+          "isPublished": false
+        }
+      ],
+      "submissionDetails": {
+        "procurementStage": "PRELIMINARY MARKET ENGAGEMENT",
+        "submissionRoute": "Public Contracts Scotland (PCS) / Direct Authority Market Engagement",
+        "submissionPortalUrl": "https://www.publiccontractsscotland.gov.uk/search/Search_AuthProfile.aspx?ID=AA00231",
+        "deadline": null,
+        "clarificationDeadline": null,
+        "buyerContact": {
+          "name": "mark bremner",
+          "email": "markbremner@aberdeencity.gov.uk",
+          "telephone": "+44 1467539600",
+          "address": "Woodhill House, Westburn Road, Aberdeen AB16 5GB, United Kingdom"
+        },
+        "requiredAttachments": [
+          "Supplier Market Engagement Response Form (when issued)"
+        ],
+        "participationInstructions": "This notice is for preliminary market engagement only. It is not a call for competition and does not commit the Council to a procurement. Suppliers should register on Public Contracts Scotland (AA00231) and monitor notice updates ahead of the indicative November 2026 contract notice date.",
+        "isOpenForBid": false,
+        "isMarketEngagement": true
+      },
+      "fitAndRisks": {
+        "whyAdrastichyperlinkFits": "Adrastichyperlink has elite capability in destination visual identity, high-end motion design, brand strategy, campaign storytelling, and digital promotional content. Perfectly matches the city promotion and creative marketing objectives funded by the Aberdeen Visitor Levy.",
+        "whyItMayNotFit": "The £900k contract encompasses broad destination management, travel trade support, and visitor economy operations outside pure creative design. Requires substantial prime contractor administrative bandwidth.",
+        "riskFactors": [
+          "Procurement is at preliminary market engagement stage; specifications and delivery model subject to Council approvals.",
+          "Requires partnering with a tourism management consultancy or regional stakeholder to fulfill travel trade and operational scope.",
+          "Visitor levy funding is tied to implementation schedule commencing 1 April 2027."
+        ],
+        "partneringRecommendation": "PARTNER / CONSORTIUM ROUTE: Adrastichyperlink should position as the Creative, Branding & Digital Motion Lead partnering with an established Scottish tourism/destination management consultancy as Prime Contractor."
+      },
+      "sourceEvidence": [
+        {
+          "id": "ev-068074-2026-1",
+          "topic": "Procurement Stage & Notice Type",
+          "fact": "Prior Information Notice (PIN) for Preliminary Market Engagement; not a call for competition",
+          "source": "Find a Tender OCDS release 068074-2026 (tag: [\"planning\"])",
+          "sourceType": "OFFICIAL_OCDS_NOTICE",
+          "confidence": "VERIFIED"
+        },
+        {
+          "id": "ev-068074-2026-2",
+          "topic": "Contract Value & Funding Mechanism",
+          "fact": "£900,000 GBP (Funded via Aberdeen Visitor Levy)",
+          "source": "Find a Tender OCDS release: tender.value.amount (900000)",
+          "sourceType": "OFFICIAL_OCDS_NOTICE",
+          "confidence": "VERIFIED"
+        },
+        {
+          "id": "ev-068074-2026-3",
+          "topic": "Buyer Legal Entity & Contact Point",
+          "fact": "Aberdeen City Council (Contact: mark bremner, markbremner@aberdeencity.gov.uk)",
+          "source": "Find a Tender OCDS release: parties[0]",
+          "sourceType": "OFFICIAL_OCDS_NOTICE",
+          "confidence": "VERIFIED"
+        },
+        {
+          "id": "ev-068074-2026-4",
+          "topic": "Indicative Future Competition Date",
+          "fact": "Future notice date: 2026-11-10T00:00:00Z",
+          "source": "Find a Tender OCDS release: tender.communication.futureNoticeDate",
+          "sourceType": "OFFICIAL_OCDS_NOTICE",
+          "confidence": "VERIFIED"
+        },
+        {
+          "id": "ev-068074-2026-5",
+          "topic": "Delivery Location & Region",
+          "fact": "Aberdeen City (Region: UKM50)",
+          "source": "Find a Tender OCDS release: tender.items[0].deliveryLocation",
+          "sourceType": "OFFICIAL_OCDS_NOTICE",
+          "confidence": "VERIFIED"
+        }
+      ]
+    }
   },
 ];
 
