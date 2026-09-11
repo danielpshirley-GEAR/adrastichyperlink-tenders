@@ -4,30 +4,36 @@ import { GeminiClient } from '@/shared/ai/gemini-client';
 import { DeterministicFilter } from './deterministic-filter';
 
 export const GeminiAnalysisSchema = z.object({
-  whatTheyAreBuying: z.string().default('UNKNOWN'),
-  whyTheyNeedIt: z.string().default('UNKNOWN'),
-  relevantServices: z.array(z.string()).default([]),
-  keyDeliverables: z.array(z.string()).default([]),
-  buyer: z.string().default('UNKNOWN'),
-  value: z.string().default('UNKNOWN'),
-  deadline: z.string().default('UNKNOWN'),
-  eligibilityIssues: z.string().default('UNKNOWN'),
-  whyAdrastichyperlinkFits: z.string().default('UNKNOWN'),
-  whyItMayNotFit: z.string().default('UNKNOWN'),
-  partnerRequirement: z.string().default('UNKNOWN'),
-  bidEffort: z.string().default('MEDIUM'),
-  recommendation: z.enum(['STRONG BID', 'INVESTIGATE', 'WATCH', 'PARTNER', 'PASS']).default('WATCH'),
-  isPartnerRoute: z.boolean().default(false),
+  whatTheyAreBuying: z.string().catch('UNKNOWN'),
+  whyTheyNeedIt: z.string().catch('UNKNOWN'),
+  relevantServices: z.array(z.string()).catch([]),
+  keyDeliverables: z.array(z.string()).catch([]),
+  buyer: z.string().catch('UNKNOWN'),
+  value: z.string().catch('UNKNOWN'),
+  deadline: z.string().catch('UNKNOWN'),
+  eligibilityIssues: z.string().catch('UNKNOWN'),
+  whyAdrastichyperlinkFits: z.string().catch('UNKNOWN'),
+  whyItMayNotFit: z.string().catch('UNKNOWN'),
+  partnerRequirement: z.string().catch('UNKNOWN'),
+  bidEffort: z.string().catch('MEDIUM'),
+  recommendation: z.preprocess(
+    (val) => (typeof val === 'string' ? val.toUpperCase().trim() : val),
+    z.enum(['STRONG BID', 'INVESTIGATE', 'WATCH', 'PARTNER', 'PASS'])
+  ).catch('WATCH'),
+  isPartnerRoute: z.boolean().catch(false),
 });
 
 export type GeminiAnalysis = z.infer<typeof GeminiAnalysisSchema>;
 
 export const TenderClassificationSchema = z.object({
-  relevance: z.enum(['STRONG', 'POSSIBLE', 'WEAK', 'REJECT']),
-  serviceMatches: z.array(z.string()),
-  reason: z.string(),
-  falsePositive: z.boolean(),
-  confidence: z.number().min(0).max(100),
+  relevance: z.preprocess(
+    (val) => (typeof val === 'string' ? val.toUpperCase().trim() : val),
+    z.enum(['STRONG', 'POSSIBLE', 'WEAK', 'REJECT'])
+  ).catch('POSSIBLE'),
+  serviceMatches: z.array(z.string()).catch([]),
+  reason: z.string().catch('Evaluated by Gemini'),
+  falsePositive: z.boolean().catch(false),
+  confidence: z.coerce.number().catch(75),
   analysis: GeminiAnalysisSchema.optional(),
 });
 
@@ -189,27 +195,56 @@ Respond strictly in valid JSON matching this schema:
 
         if (result) {
           const validated = TenderClassificationSchema.safeParse(result);
-          if (validated.success) {
-            return {
-              deterministic: deterministicResult,
-              ai: {
-                status: 'RUN',
-                relevance: validated.data.relevance,
-                serviceMatches: validated.data.serviceMatches,
-                reason: validated.data.reason,
-                confidence: validated.data.confidence,
-                model: GeminiClient.getModelForTier(1),
-                analysis: validated.data.analysis,
-              },
-              final: {
-                relevance: validated.data.relevance,
-                reason: validated.data.reason,
-                serviceMatches: validated.data.serviceMatches,
-                recommendation: validated.data.analysis?.recommendation,
-                analysis: validated.data.analysis,
-              },
-            };
-          }
+          const data = validated.success
+            ? validated.data
+            : {
+                relevance: 'POSSIBLE' as const,
+                serviceMatches: (result as any)?.serviceMatches || [],
+                reason:
+                  typeof (result as any)?.reason === 'string'
+                    ? (result as any).reason
+                    : 'Opportunity evaluated by Gemini.',
+                falsePositive: false,
+                confidence: typeof (result as any)?.confidence === 'number' ? (result as any).confidence : 75,
+                analysis: GeminiAnalysisSchema.safeParse((result as any)?.analysis).success
+                  ? GeminiAnalysisSchema.parse((result as any)?.analysis)
+                  : undefined,
+              };
+
+          return {
+            deterministic: deterministicResult,
+            ai: {
+              status: 'RUN',
+              relevance: data.relevance,
+              serviceMatches: data.serviceMatches,
+              reason: data.reason,
+              confidence: data.confidence,
+              model: GeminiClient.getModelForTier(1),
+              analysis: data.analysis,
+            },
+            final: {
+              relevance: data.relevance,
+              reason: data.reason,
+              serviceMatches: data.serviceMatches,
+              recommendation: data.analysis?.recommendation as any,
+              analysis: data.analysis,
+            },
+          };
+        } else {
+          return {
+            deterministic: deterministicResult,
+            ai: {
+              status: 'FAILED',
+              serviceMatches: [],
+              reason: 'Gemini returned empty response',
+              model: GeminiClient.getModelForTier(1),
+            },
+            final: {
+              relevance: deterministic.qualification,
+              reason: `Gemini empty response; retained via deterministic filter: ${deterministic.matchedKeywords.join(', ')}`,
+              serviceMatches: deterministic.matchedKeywords,
+            },
+          };
         }
       } catch (err: any) {
         console.error('TenderClassifier Gemini error:', err.message);

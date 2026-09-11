@@ -89,7 +89,7 @@ const PROD_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://tangerine-dasi
 const AUTH_COOKIE = 'adrastichyperlink_auth=adrastic2026!';
 const TARGET_60_DAYS_AGO = '2026-07-13T00:00:00';
 
-async function postScanPage(stage: 'tender' | 'planning', cursorUrl?: string | null): Promise<ScanPageResponse> {
+async function postScanPage(stage: 'tender' | 'planning', cursorUrl?: string | null, retries = 3): Promise<ScanPageResponse> {
   const url = `${PROD_BASE_URL}/api/scan`;
   const body = {
     scanType: 'paged',
@@ -99,22 +99,33 @@ async function postScanPage(stage: 'tender' | 'planning', cursorUrl?: string | n
     cursorUrl: cursorUrl || null,
   };
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Cookie: AUTH_COOKIE,
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: AUTH_COOKIE,
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`HTTP ${response.status} from ${url}: ${text}`);
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status} from ${url}: ${text}`);
+      }
+
+      return await response.json();
+    } catch (err: any) {
+      if (attempt === retries) {
+        throw err;
+      }
+      console.warn(`[Retry ${attempt}/${retries}] postScanPage(${stage}) encountered: ${err.message}. Retrying in ${attempt * 2}s...`);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+    }
   }
-
-  return response.json();
+  throw new Error('Unreachable');
 }
 
 async function verifyOfficialNoticeUrl(url: string): Promise<{ status: number; ok: boolean; finalUrl: string }> {
@@ -122,7 +133,10 @@ async function verifyOfficialNoticeUrl(url: string): Promise<{ status: number; o
     const res = await fetch(url, {
       method: 'GET',
       headers: {
-        'User-Agent': 'Adrastichyperlink-TenderEngine/2.1 (Verification Probe)',
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-GB,en;q=0.9',
       },
       redirect: 'follow',
     });
