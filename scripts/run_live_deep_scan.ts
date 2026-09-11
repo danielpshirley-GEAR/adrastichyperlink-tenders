@@ -95,7 +95,7 @@ async function postScanPage(stage: 'tender' | 'planning', cursorUrl?: string | n
     scanType: 'paged',
     stage,
     maxPages: 1,
-    limit: 25,
+    limit: 20,
     cursorUrl: cursorUrl || null,
   };
 

@@ -40,7 +40,7 @@ export class UrlVerifier {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
 
       const response = await fetch(url, {
         method: 'GET',

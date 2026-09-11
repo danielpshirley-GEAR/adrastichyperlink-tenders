@@ -194,9 +194,20 @@ export async function POST(req: Request) {
             })
           : null;
 
-        // 6. Live URL verification with strict Grade A criteria
-        const verification = isExpired
-          ? { grade: 'A' as const, isValid: true, notes: 'Expired notice', httpStatus: 200, finalRedirectUrl: candidate.officialNoticeUrl }
+        const isRejected = classification.final.relevance === 'REJECT';
+        const lifecycleStatus = isExpired ? 'EXPIRED' : (isRejected ? 'REJECTED' : 'ACTIVE');
+        const isArchived = isExpired || isRejected;
+        const archivedReason = isExpired ? 'EXPIRED' : (isRejected ? 'AI_REJECTED' : null);
+
+        // 6. Live URL verification with strict Grade A criteria (only probe active actionable candidates)
+        const verification = (isExpired || isRejected)
+          ? {
+              grade: 'A' as const,
+              isValid: true,
+              notes: isExpired ? 'Expired notice' : 'Candidate classified as rejected',
+              httpStatus: 200,
+              finalRedirectUrl: candidate.officialNoticeUrl,
+            }
           : await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
               expectedNoticeId: candidate.noticeId,
               expectedOcid: candidate.ocid,
@@ -219,11 +230,6 @@ export async function POST(req: Request) {
         }
 
         const isNewTender = !existingTender;
-
-        const isRejected = classification.final.relevance === 'REJECT';
-        const lifecycleStatus = isExpired ? 'EXPIRED' : (isRejected ? 'REJECTED' : 'ACTIVE');
-        const isArchived = isExpired || isRejected;
-        const archivedReason = isExpired ? 'EXPIRED' : (isRejected ? 'AI_REJECTED' : null);
 
         // 7. Save canonical tender with separated classification results
         const saved = await tendersRepo.save({
