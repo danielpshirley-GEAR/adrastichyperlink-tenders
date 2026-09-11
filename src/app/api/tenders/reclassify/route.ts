@@ -27,6 +27,21 @@ export async function POST() {
   }
 }
 
+/**
+ * GET requests must never mutate data or trigger reclassification sweeps.
+ * Enforces RFC 9110 Method Not Allowed semantics.
+ */
 export async function GET() {
-  return POST();
+  return NextResponse.json(
+    {
+      error: 'Method Not Allowed',
+      message: 'Reclassification sweep mutates state and must be triggered via POST.',
+    },
+    {
+      status: 405,
+      headers: {
+        Allow: 'POST',
+      },
+    }
+  );
 }

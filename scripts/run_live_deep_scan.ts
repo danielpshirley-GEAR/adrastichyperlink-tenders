@@ -99,8 +99,20 @@ interface ScanPageResponse {
 }
 
 const PROD_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://tangerine-dasik-86354f.netlify.app';
-const AUTH_COOKIE = 'adrastichyperlink_auth=adrastic2026!';
 const TARGET_60_DAYS_AGO = '2026-07-06T00:00:00';
+
+function getAuthHeaders(): Record<string, string> {
+  if (process.env.AUTH_COOKIE) {
+    return { Cookie: process.env.AUTH_COOKIE };
+  }
+  const token = process.env.ADMIN_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error(
+      'Authentication required: Set ADMIN_ACCESS_TOKEN or AUTH_COOKIE in environment variables.'
+    );
+  }
+  return { Authorization: `Bearer ${token}` };
+}
 
 async function postScanPage(stage: 'tender' | 'planning', cursorUrl?: string | null, retries = 3): Promise<ScanPageResponse> {
   const url = `${PROD_BASE_URL}/api/scan`;
@@ -118,8 +130,8 @@ async function postScanPage(stage: 'tender' | 'planning', cursorUrl?: string | n
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Cookie: AUTH_COOKIE,
           Accept: 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(body),
       });
@@ -163,8 +175,8 @@ async function queryTendersTab(tab: string): Promise<any> {
   const url = `${PROD_BASE_URL}/api/tenders?tab=${tab}`;
   const response = await fetch(url, {
     headers: {
-      Cookie: AUTH_COOKIE,
       Accept: 'application/json',
+      ...getAuthHeaders(),
     },
   });
   if (!response.ok) return { total: 0, tenders: [], counts: {} };

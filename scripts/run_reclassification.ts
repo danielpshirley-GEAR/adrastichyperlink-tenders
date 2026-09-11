@@ -5,7 +5,18 @@
  */
 
 const PROD_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://tangerine-dasik-86354f.netlify.app';
-const AUTH_COOKIE = 'adrastichyperlink_auth=adrastic2026!';
+function getAuthHeaders(): Record<string, string> {
+  if (process.env.AUTH_COOKIE) {
+    return { Cookie: process.env.AUTH_COOKIE };
+  }
+  const token = process.env.ADMIN_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error(
+      'Authentication required: Set ADMIN_ACCESS_TOKEN or AUTH_COOKIE in environment variables.'
+    );
+  }
+  return { Authorization: `Bearer ${token}` };
+}
 
 async function triggerReclassification() {
   const url = `${PROD_BASE_URL}/api/tenders/reclassify`;
@@ -15,8 +26,8 @@ async function triggerReclassification() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Cookie: AUTH_COOKIE,
       Accept: 'application/json',
+      ...getAuthHeaders(),
     },
   });
 
@@ -32,8 +43,8 @@ async function queryTendersTab(tab: string) {
   const url = `${PROD_BASE_URL}/api/tenders?tab=${tab}&_t=${Date.now()}`;
   const response = await fetch(url, {
     headers: {
-      Cookie: AUTH_COOKIE,
       Accept: 'application/json',
+      ...getAuthHeaders(),
     },
   });
 

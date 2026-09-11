@@ -253,6 +253,10 @@ async function runUnitTests() {
   if (passed !== total) {
     process.exit(1);
   }
+
+  // 11. Authentication & Session Security Suite
+  const { runAuthSecurityTests } = await import('./test_auth_security');
+  await runAuthSecurityTests();
 }
 
 runUnitTests().catch((err) => {
