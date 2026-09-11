@@ -2,7 +2,7 @@
 import { getTendersRepository, getSourcesRepository } from '@/shared/database/db';
 import { DeterministicFilter } from './deterministic-filter';
 import { TenderClassifier } from './tender-classifier';
-import { formatOfficialNoticeUrl } from '../connectors/find-a-tender';
+import { formatOfficialNoticeUrl, FindATenderConnector } from '../connectors/find-a-tender';
 
 export interface ReclassifiedNoticeAudit {
   noticeId: string;
@@ -90,7 +90,7 @@ export class ReclassificationSweep {
       const priorIsArchived = tender.isArchived;
       const priorAiResult = tender.aiResult;
 
-      // Load saved source notice if available
+      // Load saved source notice if available, or fetch complete release via connector
       let rawNotice: any = null;
       try {
         rawNotice = await sourcesRepo.getSourceNotice('find_a_tender', noticeId);
@@ -98,16 +98,36 @@ export class ReclassificationSweep {
         // Fall back to tender record data
       }
 
-      const description =
+      let description =
+        rawNotice?.raw_notice_json?.tender?.description ||
         rawNotice?.raw_notice_json?.description ||
-        tender.plainEnglishSummary ||
         tender.description ||
-        tender.title ||
         '';
 
-      const cpvCodes: string[] = Array.isArray(rawNotice?.raw_notice_json?.cpvCodes)
-        ? rawNotice.raw_notice_json.cpvCodes
-        : [];
+      let cpvCodes: string[] = [];
+      if (rawNotice?.raw_notice_json) {
+        const ocds = rawNotice.raw_notice_json;
+        if (ocds.tender?.classification?.id) cpvCodes.push(ocds.tender.classification.id);
+        if (Array.isArray(ocds.tender?.items)) {
+          for (const it of ocds.tender.items) {
+            if (it.classification?.id && !cpvCodes.includes(it.classification.id)) cpvCodes.push(it.classification.id);
+          }
+        }
+      }
+
+      // If description or CPVs are missing from database payload, fetch complete notice via FindATenderConnector
+      if (!description || description.length < 50 || cpvCodes.length === 0) {
+        try {
+          const connector = new FindATenderConnector();
+          const fetched = await connector.fetchNotice(noticeId);
+          if (fetched) {
+            description = fetched.description || description;
+            cpvCodes = fetched.cpvCodes?.length ? fetched.cpvCodes : cpvCodes;
+          }
+        } catch {
+          description = description || tender.plainEnglishSummary || tender.title || '';
+        }
+      }
 
       // Run current deterministic filter
       const deterministic = DeterministicFilter.evaluate({
@@ -126,6 +146,12 @@ export class ReclassificationSweep {
         const newIsArchived = true;
         const archivedReason = 'RULE_RECLASSIFIED';
         const changeReason = deterministic.rejectedReason || 'Reclassified as REJECT via current deterministic negative filters.';
+        const primaryPurpose =
+          deterministic.rejectedReason?.toLowerCase().includes('property maintenance') ||
+          tender.title?.toLowerCase().includes('maintenance') ||
+          tender.title?.toLowerCase().includes('housing')
+            ? 'CONSTRUCTION'
+            : 'OTHER';
 
         await tendersRepo.save({
           id: tender.id,
@@ -166,7 +192,7 @@ export class ReclassificationSweep {
           newLifecycleStatus,
           newIsArchived,
           newAiResult: priorAiResult,
-          primaryPurpose: 'CONSTRUCTION',
+          primaryPurpose,
           recommendation: 'PASS',
           aiReviewStatus: 'SKIPPED',
           changed: true,
@@ -226,6 +252,9 @@ export class ReclassificationSweep {
             qualification: newQualification as any,
             deterministicResult: classification.deterministic.relevance as any,
             aiResult: classification.ai.relevance as any,
+            aiReviewStatus: 'COMPLETED',
+            primaryPurpose: classification.final.primaryPurpose,
+            recommendation: classification.final.recommendation || 'WATCH',
             finalQualification: newQualification as any,
             lifecycleStatus: newLifecycleStatus as any,
             isArchived: newIsArchived,
@@ -283,6 +312,8 @@ export class ReclassificationSweep {
             qualification: 'POSSIBLE',
             deterministicResult: 'POSSIBLE',
             aiResult: 'FAILED' as any,
+            aiReviewStatus: 'REQUIRED',
+            recommendation: 'REVIEW',
             finalQualification: 'POSSIBLE',
             lifecycleStatus: 'ACTIVE',
             isArchived: false,
@@ -316,6 +347,7 @@ export class ReclassificationSweep {
         }
       } else {
         // No change needed; record current state
+        const cleanUrl = formatOfficialNoticeUrl(noticeId, tender.officialNoticeUrl);
         auditRecords.push({
           noticeId,
           title: tender.title,
@@ -334,7 +366,7 @@ export class ReclassificationSweep {
           changed: false,
           reason: tender.plainEnglishSummary || 'Current classification remains valid.',
           geminiRetried: false,
-          officialNoticeUrl: cleanOfficialUrl,
+          officialNoticeUrl: cleanUrl,
         });
       }
     }
