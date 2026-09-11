@@ -7,6 +7,7 @@ const PUBLIC_PREFIXES = [
   '/review',
   '/_next',
   '/api/health',
+  '/api/auth/login',
   '/login',
   '/favicon.ico',
 ];
