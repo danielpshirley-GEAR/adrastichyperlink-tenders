@@ -211,6 +211,41 @@ async function runUnitTests() {
     db.prepare('DELETE FROM tenders WHERE canonical_reference = ?').run(testRef);
   });
 
+  // 10. Health endpoint: Genuine build & runtime identification
+  await test('Health endpoint: Genuine build & runtime identification without hardcoded SHA', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const healthRouteContent = fs.readFileSync(
+      path.join(process.cwd(), 'src/app/api/health/route.ts'),
+      'utf8'
+    );
+
+    // Verify hardcoded SHA c193b1deadef6f63724965081408ae68ac5ba972 is completely gone
+    assert.ok(
+      !healthRouteContent.includes('c193b1deadef6f63724965081408ae68ac5ba972'),
+      'Hardcoded commit SHA must be eradicated from health route'
+    );
+
+    const { GET } = await import('../src/app/api/health/route');
+    const res = await GET();
+    const json = await res.json();
+
+    assert.ok('commit' in json, 'commit must be present in health response');
+    assert.ok('runtime' in json, 'runtime must be present in health response');
+    assert.ok('deployId' in json, 'deployId must be present in health response');
+    assert.ok('deployContext' in json, 'deployContext must be present in health response');
+    assert.ok('branch' in json, 'branch must be present in health response');
+
+    // Runtime must be either Netlify Next.js or Next.js Node.js Server
+    assert.ok(
+      ['Netlify Next.js', 'Next.js Node.js Server'].includes(json.runtime),
+      `Invalid runtime reported: ${json.runtime}`
+    );
+
+    // Commit must not be the old hardcoded string
+    assert.notStrictEqual(json.commit, 'c193b1deadef6f63724965081408ae68ac5ba972');
+  });
+
   console.log(`\n====================================================`);
   console.log(`UNIT SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);
   console.log(`====================================================\n`);

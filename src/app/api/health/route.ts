@@ -23,14 +23,35 @@ export async function GET() {
     // DB unconfigured or probe error
   }
 
-  const runtimeName = process.env.NETLIFY
-    ? 'Netlify Next.js Serverless'
-    : (process.env.VERCEL ? 'Vercel Serverless' : 'Next.js Node.js Server');
+  // 1. Genuine runtime identification
+  const isNetlify = Boolean(
+    process.env.NETLIFY === 'true' ||
+    process.env.IS_NETLIFY === 'true' ||
+    process.env.DEPLOY_ID ||
+    process.env.NETLIFY_DEPLOY_ID ||
+    (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('netlify'))
+  );
 
-  const commitSha = process.env.COMMIT_REF
-    || process.env.NEXT_PUBLIC_COMMIT_SHA
-    || process.env.VERCEL_GIT_COMMIT_SHA
-    || 'c193b1deadef6f63724965081408ae68ac5ba972';
+  const runtime = isNetlify ? 'Netlify Next.js' : 'Next.js Node.js Server';
+
+  // 2. Genuine commit identification (Strict priority: COMMIT_REF > NEXT_PUBLIC_COMMIT_SHA > BUILD_COMMIT_SHA > VERCEL_GIT_COMMIT_SHA)
+  const rawCommit =
+    process.env.COMMIT_REF ||
+    process.env.NEXT_PUBLIC_COMMIT_SHA ||
+    process.env.BUILD_COMMIT_SHA ||
+    process.env.VERCEL_GIT_COMMIT_SHA;
+
+  const commit = (rawCommit && rawCommit.trim()) || 'UNKNOWN';
+
+  // 3. Genuine deploy information
+  const rawDeployId = process.env.DEPLOY_ID || process.env.NETLIFY_DEPLOY_ID;
+  const deployId = (rawDeployId && rawDeployId.trim()) || null;
+
+  const rawDeployContext = process.env.CONTEXT || process.env.DEPLOY_CONTEXT;
+  const deployContext = (rawDeployContext && rawDeployContext.trim()) || null;
+
+  const rawBranch = process.env.BRANCH || process.env.DEPLOY_BRANCH || process.env.VERCEL_GIT_COMMIT_REF;
+  const branch = (rawBranch && rawBranch.trim()) || null;
 
   const dbStatusString = dbHealth.healthy
     ? 'DATABASE CONNECTED'
@@ -48,8 +69,11 @@ export async function GET() {
     : (ftsHealth === 'untested' ? 'FIND A TENDER — UNTESTED' : (ftsHealth === 'degraded' ? 'FIND A TENDER — DEGRADED' : 'FIND A TENDER — ERROR'));
 
   return NextResponse.json({
-    runtime: runtimeName,
-    commit: commitSha,
+    runtime,
+    commit,
+    deployId,
+    deployContext,
+    branch,
     database: {
       status: dbStatusString,
       type: dbTypeString,
