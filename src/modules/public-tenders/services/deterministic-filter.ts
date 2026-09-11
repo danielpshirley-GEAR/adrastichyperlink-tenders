@@ -58,7 +58,6 @@ const CREATIVE_SINGLE_TOKENS = [
   'explainer',
   'film',
   'video',
-  'communications',
   'ux',
   'ui',
 ];
@@ -112,6 +111,21 @@ const NEGATIVE_EXCLUSIONS = [
   { pattern: 'cleaning services', reason: 'Facilities cleaning' },
   { pattern: 'grounds maintenance', reason: 'Grounds maintenance' },
   { pattern: 'catering services', reason: 'Catering / food supply' },
+  // Construction & Property Maintenance trades (incidental creative terms do not override primary purpose)
+  { pattern: 'property maintenance', reason: 'Property maintenance trades' },
+  { pattern: 'housing maintenance', reason: 'Housing maintenance trades' },
+  { pattern: 'builder works', reason: 'General builder works' },
+  { pattern: 'general builder', reason: 'General builder works' },
+  { pattern: 'building works', reason: 'Building works / construction' },
+  { pattern: 'plumbing', reason: 'Plumbing and heating trades' },
+  { pattern: 'joinery', reason: 'Joinery and carpentry trades' },
+  { pattern: 'roofing', reason: 'Roofing and guttering works' },
+  { pattern: 'ground works', reason: 'Ground works and excavation' },
+  { pattern: 'groundworks', reason: 'Civil engineering groundworks' },
+  { pattern: 'fencing', reason: 'Fencing and perimeter works' },
+  { pattern: 'multi-trade', reason: 'Multi-trade construction' },
+  { pattern: 'demolition', reason: 'Demolition services' },
+  { pattern: 'asbestos', reason: 'Hazardous material remediation' },
 ];
 
 export class DeterministicFilter {

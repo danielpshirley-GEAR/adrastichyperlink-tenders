@@ -167,7 +167,9 @@ export class TendersRepository {
         ? new Date(submissionDeadline).getTime() < Date.now()
         : false;
 
-    const isRejected = (tender.finalQualification === 'REJECT' || tender.qualification === 'REJECT' || existing?.final_qualification === 'REJECT' || existing?.qualification === 'REJECT');
+    const isRejected = tender.finalQualification !== undefined
+      ? (tender.finalQualification === 'REJECT' || tender.qualification === 'REJECT')
+      : (existing?.final_qualification === 'REJECT' || existing?.qualification === 'REJECT');
 
     let lifecycleStatus = 'ACTIVE';
     if (isPastDeadline) {
@@ -195,7 +197,11 @@ export class TendersRepository {
     const finalQualification = isRejected ? 'REJECT' : (tender.finalQualification ?? existing?.final_qualification ?? qualification);
 
     const verificationGrade = tender.verificationGrade || existing?.verification_grade || 'D';
-    const officialNoticeUrl = tender.officialNoticeUrl || existing?.official_notice_url || '';
+    const rawUrl = tender.officialNoticeUrl || existing?.official_notice_url || '';
+    const cleanNoticeId = (latestNoticeId || tender.canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
+    const officialNoticeUrl = cleanNoticeId
+      ? `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`
+      : rawUrl.replace(/svg.*$/i, '').trim();
     const applicationPortalUrl = (tender as any).applicationPortalUrl || existing?.application_portal_url || null;
     const serviceTags = JSON.stringify(tender.serviceTags || (existing?.service_tags ? JSON.parse(existing.service_tags) : []));
     const bidDecisionState = tender.bidDecisionState || existing?.bid_decision_state || 'UNDECIDED';

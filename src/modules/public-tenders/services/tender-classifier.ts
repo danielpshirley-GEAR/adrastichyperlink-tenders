@@ -3,7 +3,26 @@ import { z } from 'zod';
 import { GeminiClient } from '@/shared/ai/gemini-client';
 import { DeterministicFilter } from './deterministic-filter';
 
+export const PrimaryPurposeEnum = z.enum([
+  'CREATIVE_MARKETING',
+  'CREATIVE_PRODUCTION',
+  'DIGITAL_DESIGN',
+  'CONSULTANCY_WITH_CREATIVE_OVERLAP',
+  'PHYSICAL_FABRICATION',
+  'CONSTRUCTION',
+  'IT_HARDWARE',
+  'CCTV_SECURITY',
+  'MEDIA_BUYING',
+  'OTHER',
+]);
+
+export type PrimaryPurpose = z.infer<typeof PrimaryPurposeEnum>;
+
 export const GeminiAnalysisSchema = z.object({
+  primaryPurpose: z.preprocess(
+    (val) => (typeof val === 'string' ? val.toUpperCase().trim() : val),
+    PrimaryPurposeEnum
+  ).catch('OTHER'),
   whatTheyAreBuying: z.string().catch('UNKNOWN'),
   whyTheyNeedIt: z.string().catch('UNKNOWN'),
   relevantServices: z.array(z.string()).catch([]),
@@ -49,6 +68,7 @@ export interface ClassificationResult {
   ai: {
     status: 'RUN' | 'NOT_RUN' | 'FAILED' | 'UNCONFIGURED';
     relevance?: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
+    primaryPurpose?: PrimaryPurpose;
     serviceMatches: string[];
     reason?: string;
     confidence?: number;
@@ -57,10 +77,12 @@ export interface ClassificationResult {
   };
   final: {
     relevance: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
+    primaryPurpose?: PrimaryPurpose;
     reason: string;
     serviceMatches: string[];
     recommendation?: 'STRONG BID' | 'INVESTIGATE' | 'WATCH' | 'PARTNER' | 'PASS';
     analysis?: GeminiAnalysis;
+    reasonFinalQualificationWasChosen: string;
   };
 }
 
@@ -112,6 +134,7 @@ export class TenderClassifier {
           relevance: 'REJECT',
           reason: deterministic.rejectedReason || 'Opportunity rejected by deterministic exclusion criteria.',
           serviceMatches: [],
+          reasonFinalQualificationWasChosen: deterministic.rejectedReason || 'Opportunity rejected by deterministic exclusion criteria.',
         },
       };
     }
@@ -131,16 +154,23 @@ ADRASTICHYPERLINK CAPABILITY PROFILE:
   * Information design, presentation design, digital design, website design, UX/UI
   * Interactive digital experiences, training / learning content, creative production.
 
-CRITICAL EVALUATION RULES:
-1. PURE MEDIA BUYING EXCLUSION:
-   - Procurements strictly for media buying or media planning alone (e.g. purchasing ad space, billboard placements, TV slots, or media budget management without creative content production, such as Robert Gordon University Media Planning & Buying) MUST be classified as REJECT.
-2. EXPLICIT REJECTIONS:
-   - Video surveillance / CCTV cameras, software licenses / subscriptions, physical sign / metal fabrication, web hosting only, architectural/structural CAD engineering, security guarding, catering, cleaning.
-3. LARGE OPPORTUNITIES (DO NOT HIDE OR AUTO-REJECT):
-   - If a contract is high-value (e.g. multi-million pound framework, major agency roster) but includes creative/campaign/motion/video/brand scope, DO NOT automatically reject for size.
-   - Classify as "POSSIBLE" (with analysis.isPartnerRoute: true and analysis.recommendation: "PARTNER" or "WATCH"), explaining that Adrastichyperlink can deliver the specialist motion, animation, brand, or video elements in partnership, as a consortium member, or as a subcontractor.
-4. HONEST INFORMATION:
-   - Do not invent missing facts. Use "UNKNOWN" if details like exact budget or specific deliverables are absent from the notice.
+PRIMARY PROCUREMENT PURPOSE CLASSIFICATION (STAGE 1):
+Before deciding relevance, determine the substantive primary procurement purpose from actual lots, primary deliverables, specification, and buyer requirement (NOT isolated keywords):
+- "CREATIVE_MARKETING": Destination marketing, promotional campaigns, public awareness campaigns, brand strategy, campaign creative.
+- "CREATIVE_PRODUCTION": Motion design, 2D/3D animation, video production, video editing, explainer films, digital interactive content creation.
+- "DIGITAL_DESIGN": Website design, UX/UI design, information design, digital interactive experiences.
+- "CONSULTANCY_WITH_CREATIVE_OVERLAP": Broad business advisory frameworks (e.g. Glasgow Business Growth Programme) where specific lots include sales, digital marketing, and branding. (Classify as POSSIBLE / WATCH; clearly distinguish as consultancy/business-support delivery, not primary creative production).
+- "PHYSICAL_FABRICATION": Physical exhibition fitout/build, joinery, display build and installation, signage manufacturing, where artwork/graphics are supplied by client or incidental (e.g. RBGE exhibition fitout). MUST BE CLASSIFIED AS REJECT.
+- "CONSTRUCTION": Property maintenance, housing repairs, builder works, plumbing, heating, joinery, electrical, roofing, civils, groundworks (e.g. Highland Council). MUST BE CLASSIFIED AS REJECT.
+- "IT_HARDWARE": Computer hardware, servers, network cabling, infrastructure, software licensing. MUST BE CLASSIFIED AS REJECT.
+- "CCTV_SECURITY": Surveillance cameras, security guarding, access control. MUST BE CLASSIFIED AS REJECT.
+- "MEDIA_BUYING": Purchasing advertising space, billboard slots, media planning without creative content (e.g. Robert Gordon University). MUST BE CLASSIFIED AS REJECT.
+- "OTHER": Non-creative goods or services. MUST BE CLASSIFIED AS REJECT.
+
+CORE EVALUATION LAW:
+INCIDENTAL CREATIVE TERMS DO NOT OVERRIDE PRIMARY PROCUREMENT PURPOSE.
+Determine relevance from: 1. actual lots, 2. primary deliverables, 3. specification, 4. buyer requirement — NOT isolated keywords.
+If primaryPurpose is CONSTRUCTION, PHYSICAL_FABRICATION, IT_HARDWARE, CCTV_SECURITY, or MEDIA_BUYING, relevance MUST be REJECT.
 
 TENDER DETAILS:
 Title: ${input.title || 'Untitled'}
@@ -160,6 +190,7 @@ Respond strictly in valid JSON matching this schema:
   "falsePositive": false,
   "confidence": number between 0 and 100,
   "analysis": {
+    "primaryPurpose": "CREATIVE_MARKETING" | "CREATIVE_PRODUCTION" | "DIGITAL_DESIGN" | "CONSULTANCY_WITH_CREATIVE_OVERLAP" | "PHYSICAL_FABRICATION" | "CONSTRUCTION" | "IT_HARDWARE" | "CCTV_SECURITY" | "MEDIA_BUYING" | "OTHER",
     "whatTheyAreBuying": "Concise description of procurement scope",
     "whyTheyNeedIt": "Context/purpose for buyer",
     "relevantServices": ["Matching Adrastichyperlink services"],
@@ -211,11 +242,28 @@ Respond strictly in valid JSON matching this schema:
                   : undefined,
               };
 
+          const primaryPurpose = data.analysis?.primaryPurpose || 'OTHER';
+          let finalRelevance = data.relevance;
+          let reasonFinalQualificationWasChosen = data.reason;
+
+          // Reusable rule enforcement: Incidental creative terms do not override substantive primary purpose
+          if (
+            primaryPurpose === 'CONSTRUCTION' ||
+            primaryPurpose === 'PHYSICAL_FABRICATION' ||
+            primaryPurpose === 'IT_HARDWARE' ||
+            primaryPurpose === 'CCTV_SECURITY' ||
+            primaryPurpose === 'MEDIA_BUYING'
+          ) {
+            finalRelevance = 'REJECT';
+            reasonFinalQualificationWasChosen = `Primary procurement purpose is ${primaryPurpose}. Incidental creative or design terms do not override substantive non-creative purpose.`;
+          }
+
           return {
             deterministic: deterministicResult,
             ai: {
               status: 'RUN',
               relevance: data.relevance,
+              primaryPurpose,
               serviceMatches: data.serviceMatches,
               reason: data.reason,
               confidence: data.confidence,
@@ -223,11 +271,13 @@ Respond strictly in valid JSON matching this schema:
               analysis: data.analysis,
             },
             final: {
-              relevance: data.relevance,
-              reason: data.reason,
+              relevance: finalRelevance,
+              primaryPurpose,
+              reason: reasonFinalQualificationWasChosen,
               serviceMatches: data.serviceMatches,
               recommendation: data.analysis?.recommendation as any,
               analysis: data.analysis,
+              reasonFinalQualificationWasChosen,
             },
           };
         } else {
@@ -243,6 +293,7 @@ Respond strictly in valid JSON matching this schema:
               relevance: deterministic.qualification,
               reason: `Gemini empty response; retained via deterministic filter: ${deterministic.matchedKeywords.join(', ')}`,
               serviceMatches: deterministic.matchedKeywords,
+              reasonFinalQualificationWasChosen: 'Gemini classification failed; unverified candidate retained for manual review.',
             },
           };
         }
@@ -260,6 +311,7 @@ Respond strictly in valid JSON matching this schema:
             relevance: deterministic.qualification,
             reason: `Gemini failed; retained via deterministic filter: ${deterministic.matchedKeywords.join(', ')}`,
             serviceMatches: deterministic.matchedKeywords,
+            reasonFinalQualificationWasChosen: `Gemini execution error (${err.message}); retained via deterministic filter for manual review.`,
           },
         };
       }
@@ -279,6 +331,7 @@ Respond strictly in valid JSON matching this schema:
             ? `Deterministic match on creative keywords: ${deterministic.matchedKeywords.join(', ')} (Gemini unconfigured)`
             : 'Candidate retained for manual review (Gemini unconfigured)',
         serviceMatches: deterministic.matchedKeywords,
+        reasonFinalQualificationWasChosen: 'Gemini unconfigured; candidate retained based solely on deterministic keyword match.',
       },
     };
   }

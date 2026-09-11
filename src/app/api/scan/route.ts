@@ -1,6 +1,5 @@
-// src/app/api/scan/route.ts
 import { NextResponse } from 'next/server';
-import { FindATenderConnector } from '@/modules/public-tenders/connectors/find-a-tender';
+import { FindATenderConnector, formatOfficialNoticeUrl, assertValidNoticeUrl } from '@/modules/public-tenders/connectors/find-a-tender';
 import { TenderClassifier } from '@/modules/public-tenders/services/tender-classifier';
 import { DeterministicFilter } from '@/modules/public-tenders/services/deterministic-filter';
 import { UrlVerifier } from '@/modules/public-tenders/services/url-verifier';
@@ -73,15 +72,15 @@ export async function POST(req: Request) {
     let expiredNotices = 0;
     let pipelineNotices = 0;
     let deterministicallyRejected = 0;
-    let geminiAnalysed = 0;
-    let geminiRequested = 0;
-    let geminiSucceeded = 0;
+    let deterministicCandidates = 0;
+    let geminiQueued = 0;
+    let geminiCompleted = 0;
+    let geminiSkipped = 0;
     let geminiFailed = 0;
-    let geminiSkippedByDeterministicFilter = 0;
 
     let strongCount = 0;
     let possibleCount = 0;
-    let weakCount = 0;
+    const weakCount = 0;
     let rejectCount = 0;
     let canonicalTendersCreated = 0;
     let canonicalTendersUpdated = 0;
@@ -114,11 +113,12 @@ export async function POST(req: Request) {
 
         // If not a creative match, skip database writes and LLM calls
         if (deterministic.isNegativeMatch || (deterministic.qualification === 'REJECT' && !deterministic.isExpired)) {
-          geminiSkippedByDeterministicFilter++;
-          rejectCount++;
           deterministicallyRejected++;
+          rejectCount++;
           continue;
         }
+
+        deterministicCandidates++;
 
         // 2. Check if deadline is already expired
         const isExpired = candidate.submissionDeadline
@@ -129,12 +129,14 @@ export async function POST(req: Request) {
           expiredNotices++;
         }
 
+        const cleanOfficialUrl = formatOfficialNoticeUrl(candidate.noticeId, candidate.officialNoticeUrl);
+
         // 3. Record raw notice in database with content hashing & versioning for all genuine candidates
         const rawRecordResult = await sourcesRepo.recordSourceNotice(
           'find_a_tender',
           candidate.noticeId,
           candidate.rawPayload,
-          candidate.officialNoticeUrl,
+          cleanOfficialUrl,
           null, // linked after tender save
           candidate.publishedAt,
           candidate.submissionDeadline,
@@ -148,7 +150,10 @@ export async function POST(req: Request) {
 
         // 4. Classify candidate with distinct deterministic and Gemini evaluation
         let classification: any;
+        let geminiRun = false;
+
         if (isExpired) {
+          geminiSkipped++;
           classification = {
             deterministic: {
               relevance: deterministic.qualification,
@@ -161,12 +166,14 @@ export async function POST(req: Request) {
               serviceMatches: deterministic.matchedKeywords,
             },
             final: {
-              relevance: deterministic.qualification,
-              reason: 'Tender submission deadline has passed (Expired).',
+              relevance: 'REJECT' as const,
+              reason: `Tender submission deadline has passed (Expired: ${candidate.submissionDeadline}). Skipped Gemini evaluation.`,
               serviceMatches: deterministic.matchedKeywords,
+              reasonFinalQualificationWasChosen: `Tender submission deadline expired on ${candidate.submissionDeadline}; excluded from active bidding.`,
             },
           };
         } else {
+          geminiQueued++;
           classification = await TenderClassifier.classify({
             title: candidate.title,
             buyer: candidate.buyerName,
@@ -178,11 +185,9 @@ export async function POST(req: Request) {
           });
 
           if (classification.ai.status === 'RUN') {
-            geminiRequested++;
-            geminiSucceeded++;
-            geminiAnalysed++;
-          } else if (classification.ai.status === 'FAILED') {
-            geminiRequested++;
+            geminiRun = true;
+            geminiCompleted++;
+          } else {
             geminiFailed++;
           }
         }
@@ -206,9 +211,9 @@ export async function POST(req: Request) {
               isValid: true,
               notes: isExpired ? 'Expired notice' : 'Candidate classified as rejected',
               httpStatus: 200,
-              finalRedirectUrl: candidate.officialNoticeUrl,
+              finalRedirectUrl: cleanOfficialUrl,
             }
-          : await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
+          : await UrlVerifier.verifyNoticeUrl(cleanOfficialUrl, {
               expectedNoticeId: candidate.noticeId,
               expectedOcid: candidate.ocid,
               expectedTitle: candidate.title,
@@ -220,7 +225,7 @@ export async function POST(req: Request) {
           urlVerificationFailures++;
         }
 
-        // 6. Check existing canonical tender for deduplication (by OCID first, then notice ID)
+        // 7. Check existing canonical tender for deduplication (by OCID first, then notice ID)
         let existingTender = null;
         if (candidate.ocid) {
           existingTender = await tendersRepo.getByOcid(candidate.ocid);
@@ -231,13 +236,13 @@ export async function POST(req: Request) {
 
         const isNewTender = !existingTender;
 
-        // 7. Save canonical tender with separated classification results
+        // 8. Save canonical tender with separated classification results
         const saved = await tendersRepo.save({
           id: existingTender?.id,
           canonicalReference: candidate.noticeId,
           ocid: candidate.ocid,
           title: candidate.title,
-          plainEnglishSummary: classification.final.reason || candidate.description?.slice(0, 300),
+          plainEnglishSummary: classification.final.reasonFinalQualificationWasChosen || classification.final.reason || candidate.description?.slice(0, 300),
           buyerName: buyer?.name || candidate.buyerName || null,
           buyerId: buyer?.id || null,
           valueAmount: candidate.valueAmount,
@@ -254,12 +259,17 @@ export async function POST(req: Request) {
           finalQualification: isRejected ? 'REJECT' : (classification.final.relevance as any),
           lifecycleStatus,
           verificationGrade: verification.grade,
-          officialNoticeUrl: candidate.officialNoticeUrl,
+          officialNoticeUrl: cleanOfficialUrl,
           applicationPortalUrl: candidate.applicationPortalUrl,
           serviceTags: classification.final.serviceMatches as any,
           isArchived,
           archivedReason,
-          evaluationCriteria: classification.final.analysis ? [{ criterion: classification.final.analysis.whatTheyAreBuying, weightingPercentage: 100 }] : [],
+          evaluationCriteria: classification.final.analysis ? [{
+            primaryPurpose: classification.final.primaryPurpose,
+            geminiRun,
+            reasonFinalQualificationWasChosen: classification.final.reasonFinalQualificationWasChosen,
+            ...classification.final.analysis,
+          }] : [],
           geminiAnalysis: classification.final.analysis,
         });
 
@@ -269,14 +279,14 @@ export async function POST(req: Request) {
           canonicalTendersUpdated++;
         }
 
-        // 8. Link raw source notice to canonical tender (source-scoped)
+        // 9. Link raw source notice to canonical tender (source-scoped)
         await sourcesRepo.linkSourceNoticesToTender('find_a_tender', saved.id, candidate.noticeId, candidate.ocid);
 
-        // 9. Record link verification
+        // 10. Record link verification
         await sourcesRepo.recordSourceLink(
           saved.id,
           'find_a_tender',
-          candidate.officialNoticeUrl,
+          cleanOfficialUrl,
           'official_notice',
           verification.grade,
           verification.httpStatus || null,
@@ -286,8 +296,7 @@ export async function POST(req: Request) {
 
         if (classification.final.relevance === 'STRONG') strongCount++;
         else if (classification.final.relevance === 'POSSIBLE') possibleCount++;
-        else if (classification.final.relevance === 'REJECT') rejectCount++;
-        else weakCount++;
+        else rejectCount++;
 
         candidatesProcessed.push({
           noticeId: candidate.noticeId,
@@ -298,12 +307,15 @@ export async function POST(req: Request) {
           valueDescription: saved.valueDescription,
           publishedAt: candidate.publishedAt,
           submissionDeadline: candidate.submissionDeadline,
-          deterministicRelevance: classification.deterministic.relevance,
-          aiRelevance: classification.ai.relevance,
+          deterministicResult: classification.deterministic.relevance,
+          geminiRun,
+          aiResult: classification.ai.status === 'RUN' ? classification.ai.relevance : classification.ai.status,
           finalQualification: classification.final.relevance,
+          primaryPurpose: classification.final.primaryPurpose,
           recommendation: classification.final.recommendation || 'WATCH',
           reason: classification.final.reason,
-          officialNoticeUrl: candidate.officialNoticeUrl,
+          reasonFinalQualificationWasChosen: classification.final.reasonFinalQualificationWasChosen,
+          officialNoticeUrl: cleanOfficialUrl,
           isExpired,
           isPlanningNotice,
           lifecycleStatus,
@@ -388,12 +400,17 @@ export async function POST(req: Request) {
       expiredNotices,
       pipelineNotices,
       deterministicallyRejected,
-      geminiAnalysed,
+      deterministicCandidates,
+      geminiQueued,
+      geminiCompleted,
+      geminiSkipped,
+      geminiFailed,
+      geminiAnalysed: geminiCompleted,
       geminiMetrics: {
-        requested: geminiRequested,
-        succeeded: geminiSucceeded,
+        queued: geminiQueued,
+        completed: geminiCompleted,
+        skipped: geminiSkipped,
         failed: geminiFailed,
-        skippedByDeterministicFilter: geminiSkippedByDeterministicFilter,
       },
       pagination: {
         paginationComplete: scanResult.paginationComplete ?? !isTruncated,

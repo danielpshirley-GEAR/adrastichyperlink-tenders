@@ -143,7 +143,9 @@ export class SupabaseTendersRepository implements ITendersRepository {
         ? new Date(tender.submissionDeadline).getTime() < Date.now()
         : false;
 
-    const isRejected = (tender.finalQualification === 'REJECT' || tender.qualification === 'REJECT' || existing?.finalQualification === 'REJECT' || existing?.qualification === 'REJECT');
+    const isRejected = tender.finalQualification !== undefined
+      ? (tender.finalQualification === 'REJECT' || tender.qualification === 'REJECT')
+      : (existing?.finalQualification === 'REJECT' || existing?.qualification === 'REJECT');
 
     let lifecycleStatus = 'ACTIVE';
     if (isPastDeadline) {
@@ -175,6 +177,12 @@ export class SupabaseTendersRepository implements ITendersRepository {
     const latestNoticeId = tender.latestNoticeId || tender.canonicalReference;
     const buyerId = tender.buyerId || (existing as any)?.buyerId || null;
 
+    const rawUrl = tender.officialNoticeUrl || existing?.officialNoticeUrl || '';
+    const cleanNoticeId = (latestNoticeId || canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
+    const officialNoticeUrl = cleanNoticeId
+      ? `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`
+      : rawUrl.replace(/svg.*$/i, '').trim();
+
     const payload: any = {
       id,
       canonical_reference: canonicalReference,
@@ -196,7 +204,7 @@ export class SupabaseTendersRepository implements ITendersRepository {
       final_qualification: finalQualification,
       lifecycle_status: lifecycleStatus,
       verification_grade: tender.verificationGrade || existing?.verificationGrade || 'D',
-      official_notice_url: tender.officialNoticeUrl || existing?.officialNoticeUrl || '',
+      official_notice_url: officialNoticeUrl,
       application_portal_url: tender.applicationPortalUrl ?? existing?.applicationPortalUrl ?? null,
       service_tags: tender.serviceTags || existing?.serviceTags || [],
       is_archived: isArchived,

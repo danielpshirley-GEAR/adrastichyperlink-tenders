@@ -10,6 +10,29 @@ export interface PagedScanOptions {
   limit?: number;
 }
 
+/**
+ * Ensures Find a Tender official notice URL strictly matches https://www.find-tender.service.gov.uk/Notice/[NOTICE-ID]
+ * Never appends svg, markdown artefacts, UI tokens, or HTML fragments.
+ */
+export function formatOfficialNoticeUrl(noticeId: string, rawUrl?: string | null): string {
+  const match = (noticeId || '').match(/(\d{6}-\d{4})/);
+  if (match) {
+    return `https://www.find-tender.service.gov.uk/Notice/${match[1]}`;
+  }
+  if (rawUrl) {
+    const rawMatch = rawUrl.match(/(\d{6}-\d{4})/);
+    if (rawMatch) {
+      return `https://www.find-tender.service.gov.uk/Notice/${rawMatch[1]}`;
+    }
+  }
+  const cleanId = (noticeId || '').replace(/[^a-zA-Z0-9-]/g, '').trim();
+  return `https://www.find-tender.service.gov.uk/Notice/${cleanId}`;
+}
+
+export function assertValidNoticeUrl(url: string): boolean {
+  return /^https:\/\/(www\.)?find-tender\.service\.gov\.uk\/Notice\/\d{6}-\d{4}$/.test(url);
+}
+
 export class FindATenderConnector implements ProcurementConnector {
   readonly id = 'find_a_tender';
   readonly name = 'Find a Tender (FTS)';
@@ -302,8 +325,8 @@ export class FindATenderConnector implements ProcurementConnector {
     const submissionDeadline = tender.tenderPeriod?.endDate ? String(tender.tenderPeriod.endDate) : null;
     const clarificationDeadline = tender.enquiryPeriod?.endDate ? String(tender.enquiryPeriod.endDate) : null;
 
-    // Official Notice URL
-    const officialNoticeUrl = `${this.baseUrl}/Notice/${noticeId}`;
+    // Official Notice URL — strictly formatted to https://www.find-tender.service.gov.uk/Notice/[NOTICE-ID]
+    const officialNoticeUrl = formatOfficialNoticeUrl(noticeId);
     const applicationPortalUrl =
       typeof tender.submissionMethodDetails === 'string' && tender.submissionMethodDetails.startsWith('http')
         ? tender.submissionMethodDetails
