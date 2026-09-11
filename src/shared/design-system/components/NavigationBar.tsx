@@ -27,6 +27,29 @@ interface NavigationBarProps {
 
 export function NavigationBar({ basePath = '', isReviewMode = false }: NavigationBarProps) {
   const pathname = usePathname();
+  const isLoginPage = pathname === '/login';
+
+  if (isLoginPage) {
+    return (
+      <header className="bg-gallery-surface/90 backdrop-blur-md border-b border-gallery-border">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded bg-gallery-charcoal text-white font-mono font-bold text-xs flex items-center justify-center tracking-tight">
+              A/H
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold tracking-tight text-gallery-charcoal uppercase">
+                Adrastichyperlink
+              </span>
+              <span className="text-[10px] font-mono tracking-widest text-gallery-muted uppercase">
+                Public Tender Engine
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <div className="sticky top-0 z-40">
@@ -95,7 +118,7 @@ export function NavigationBar({ basePath = '', isReviewMode = false }: Navigatio
           <div className="flex items-center gap-4">
             <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded bg-gallery-surfaceMuted border border-gallery-border text-[11px] font-mono text-gallery-muted">
               <Radio className="w-3 h-3 text-emerald-600 animate-pulse" />
-              <span>7 Sources Active</span>
+              <span>Find a Tender Active</span>
               <span className="text-gallery-border">•</span>
               <span>Next: Mon 07:00</span>
             </div>

@@ -45,7 +45,7 @@ function LoginForm() {
     <form className="space-y-6" onSubmit={handleSubmit}>
       <div>
         <label htmlFor="token" className="block text-xs font-mono uppercase tracking-wider text-gallery-muted font-semibold">
-          Administrator Access Token
+          Access Token
         </label>
         <div className="mt-2">
           <input
@@ -55,7 +55,7 @@ function LoginForm() {
             required
             value={token}
             onChange={(e) => setToken(e.target.value)}
-            placeholder="Enter administrator secret..."
+            placeholder="Enter access token..."
             className="appearance-none block w-full px-3 py-2.5 border border-gallery-border rounded-lg placeholder-gallery-muted/60 text-gallery-charcoal focus:outline-none focus:ring-2 focus:ring-tender-primary text-sm font-mono"
           />
         </div>
@@ -93,8 +93,8 @@ export default function LoginPage() {
         <h2 className="mt-6 text-center text-2xl font-extrabold text-gallery-charcoal tracking-tight">
           Adrastichyperlink Tender Engine
         </h2>
-        <p className="mt-2 text-center text-xs text-gallery-muted font-mono">
-          AUTHENTICATED PRODUCTION ACCESS
+        <p className="mt-2 text-center text-xs text-gallery-muted font-mono uppercase tracking-wider">
+          Sign In to Tender Engine
         </p>
       </div>
 
@@ -108,7 +108,7 @@ export default function LoginPage() {
             <div className="flex items-center gap-2 text-[11px] text-gallery-muted">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               <span>
-                Production bid management, private evidence, and scan controls are restricted to verified administrators.
+                Production bid management, private evidence, and scan controls are restricted to authorized team members.
               </span>
             </div>
           </div>
