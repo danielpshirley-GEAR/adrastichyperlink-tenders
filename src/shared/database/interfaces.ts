@@ -48,6 +48,7 @@ export interface ISourcesRepository {
     notes: string | null
   ): Promise<void>;
   linkSourceNoticesToTender(sourceId: string, tenderId: string, noticeId: string, ocid?: string): Promise<void>;
+  getSourceNotice(sourceId: string, noticeId: string): Promise<any | null>;
 }
 
 export interface IBuyersRepository {

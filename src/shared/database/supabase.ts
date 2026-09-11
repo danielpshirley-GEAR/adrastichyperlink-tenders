@@ -319,6 +319,9 @@ export class SupabaseTendersRepository implements ITendersRepository {
       qualification: row.qualification as Qualification,
       deterministicResult: row.deterministic_result || undefined,
       aiResult: row.ai_result || undefined,
+      aiReviewStatus: row.ai_review_status || (row.ai_result === 'FAILED' ? 'REQUIRED' : (row.ai_result && row.ai_result !== 'NOT_RUN' ? 'COMPLETED' : 'REQUIRED')),
+      primaryPurpose: row.primary_purpose || undefined,
+      recommendation: row.recommendation || (row.ai_result === 'FAILED' ? 'REVIEW' : (row.qualification === 'STRONG' ? 'STRONG BID' : 'WATCH')),
       finalQualification: row.final_qualification || undefined,
       lifecycleStatus: row.lifecycle_status || 'ACTIVE',
       verificationGrade: row.verification_grade as VerificationGrade,
@@ -594,6 +597,19 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
         .eq('ocid', ocid);
       if (err2) throw new Error(`Failed to link source notice ocid to tender: ${err2.message}`);
     }
+  }
+
+  async getSourceNotice(sourceId: string, noticeId: string): Promise<any | null> {
+    const { data, error } = await this.client
+      .from('source_notices')
+      .select('*')
+      .eq('source_id', sourceId)
+      .eq('notice_id', noticeId)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to get source notice: ${error.message}`);
+    return data;
   }
 }
 

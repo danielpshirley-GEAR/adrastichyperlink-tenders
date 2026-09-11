@@ -114,6 +114,10 @@ export class SqliteSourcesRepository implements ISourcesRepository {
   async linkSourceNoticesToTender(sourceId: string, tenderId: string, noticeId: string, ocid?: string): Promise<void> {
     SourcesRepository.linkSourceNoticesToTender(sourceId, tenderId, noticeId, ocid);
   }
+
+  async getSourceNotice(sourceId: string, noticeId: string): Promise<any | null> {
+    return SourcesRepository.getSourceNotice(sourceId, noticeId);
+  }
 }
 
 export class SourcesRepository {
@@ -346,5 +350,11 @@ export class SourcesRepository {
     if (ocid) {
       db.prepare('UPDATE source_notices SET tender_id = ? WHERE source_id = ? AND ocid = ?').run(tenderId, sourceId, ocid);
     }
+  }
+
+  static getSourceNotice(sourceId: string, noticeId: string): any | null {
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM source_notices WHERE source_id = ? AND notice_id = ? ORDER BY version DESC LIMIT 1').get(sourceId, noticeId);
+    return row || null;
   }
 }

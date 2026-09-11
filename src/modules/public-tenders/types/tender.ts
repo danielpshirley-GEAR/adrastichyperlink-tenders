@@ -53,7 +53,10 @@ export interface TenderSummary {
   daysRemaining?: number | null;
   qualification: Qualification;
   deterministicResult?: Qualification;
-  aiResult?: Qualification | 'NOT_RUN' | 'UNAVAILABLE';
+  aiResult?: Qualification | 'NOT_RUN' | 'UNAVAILABLE' | 'FAILED';
+  aiReviewStatus?: 'COMPLETED' | 'REQUIRED' | 'SKIPPED' | string;
+  primaryPurpose?: string;
+  recommendation?: string;
   finalQualification?: Qualification;
   lifecycleStatus?: 'ACTIVE' | 'EXPIRED' | 'AWARDED' | 'WITHDRAWN' | 'REJECTED';
   verificationGrade: VerificationGrade;
@@ -62,7 +65,7 @@ export interface TenderSummary {
   serviceTags: ServiceTaxonomy[];
   sourceId: string;
   isArchived: boolean;
-  archivedReason?: 'AI_REJECTED' | 'EXPIRED' | 'MANUAL' | string | null;
+  archivedReason?: 'RULE_RECLASSIFIED' | 'AI_REJECTED' | 'EXPIRED' | 'MANUAL' | string | null;
   discoveredAt: string;
   lastVerifiedAt: string;
   bidDecisionState?: BidDecisionType | 'UNDECIDED';

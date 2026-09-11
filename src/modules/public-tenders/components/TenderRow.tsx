@@ -39,6 +39,11 @@ export function TenderRow({ tender, basePath = '' }: TenderRowProps) {
           >
             {tender.qualification}
           </span>
+          {(tender.aiReviewStatus === 'REQUIRED' || tender.aiResult === 'FAILED') && (
+            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border bg-amber-100 text-amber-900 border-amber-300">
+              AI REVIEW INCOMPLETE
+            </span>
+          )}
         </div>
 
         <h3 className="text-sm font-extrabold text-gallery-charcoal hover:text-tender-primary transition-colors">
@@ -97,9 +102,10 @@ export function TenderRow({ tender, basePath = '' }: TenderRowProps) {
             target="_blank"
             rel="noopener noreferrer"
             title="Open exact official public notice"
-            className="p-1.5 text-gallery-faint hover:text-gallery-charcoal transition-colors rounded hover:bg-gallery-surfaceMuted"
+            aria-label="Open exact official public notice"
+            className="p-1.5 text-gallery-faint hover:text-gallery-charcoal transition-colors rounded hover:bg-gallery-surfaceMuted inline-flex items-center"
           >
-            <ExternalLink className="w-3.5 h-3.5" />
+            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
           </a>
         </div>
       </div>

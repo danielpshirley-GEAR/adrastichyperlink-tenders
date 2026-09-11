@@ -1,6 +1,6 @@
 // src/modules/public-tenders/services/tender-classifier.ts
 import { z } from 'zod';
-import { GeminiClient } from '@/shared/ai/gemini-client';
+import { GeminiClient, GeminiFailureCategory } from '@/shared/ai/gemini-client';
 import { DeterministicFilter } from './deterministic-filter';
 
 export const PrimaryPurposeEnum = z.enum([
@@ -37,8 +37,8 @@ export const GeminiAnalysisSchema = z.object({
   bidEffort: z.string().catch('MEDIUM'),
   recommendation: z.preprocess(
     (val) => (typeof val === 'string' ? val.toUpperCase().trim() : val),
-    z.enum(['STRONG BID', 'INVESTIGATE', 'WATCH', 'PARTNER', 'PASS'])
-  ).catch('WATCH'),
+    z.enum(['STRONG BID', 'INVESTIGATE', 'WATCH', 'PARTNER', 'PASS', 'REVIEW'])
+  ).catch('REVIEW'),
   isPartnerRoute: z.boolean().catch(false),
 });
 
@@ -67,6 +67,8 @@ export interface ClassificationResult {
   };
   ai: {
     status: 'RUN' | 'NOT_RUN' | 'FAILED' | 'UNCONFIGURED';
+    aiReviewStatus?: 'COMPLETED' | 'REQUIRED' | 'SKIPPED';
+    failureCategory?: GeminiFailureCategory;
     relevance?: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
     primaryPurpose?: PrimaryPurpose;
     serviceMatches: string[];
@@ -80,7 +82,7 @@ export interface ClassificationResult {
     primaryPurpose?: PrimaryPurpose;
     reason: string;
     serviceMatches: string[];
-    recommendation?: 'STRONG BID' | 'INVESTIGATE' | 'WATCH' | 'PARTNER' | 'PASS';
+    recommendation?: 'STRONG BID' | 'INVESTIGATE' | 'WATCH' | 'PARTNER' | 'PASS' | 'REVIEW';
     analysis?: GeminiAnalysis;
     reasonFinalQualificationWasChosen: string;
   };
@@ -122,24 +124,26 @@ export class TenderClassifier {
       isExpired: deterministic.isExpired,
     };
 
-    // If deterministic filter strongly rejected (e.g. CCTV, surveillance, sign manufacturing), do not waste AI calls
+    // If deterministic filter strongly rejected (e.g. CCTV, surveillance, sign manufacturing, property maintenance), do not waste AI calls
     if (deterministic.isNegativeMatch || (deterministic.qualification === 'REJECT' && !deterministic.isExpired)) {
       return {
         deterministic: deterministicResult,
         ai: {
           status: 'NOT_RUN',
+          aiReviewStatus: 'SKIPPED',
           serviceMatches: [],
         },
         final: {
           relevance: 'REJECT',
           reason: deterministic.rejectedReason || 'Opportunity rejected by deterministic exclusion criteria.',
           serviceMatches: [],
+          recommendation: 'PASS',
           reasonFinalQualificationWasChosen: deterministic.rejectedReason || 'Opportunity rejected by deterministic exclusion criteria.',
         },
       };
     }
 
-    // 2. If Gemini is configured, use structured LLM classification
+    // 2. If Gemini is configured, use structured LLM classification with bounded retry
     if (GeminiClient.isConfigured()) {
       const prompt = `
 Evaluate whether the following UK public sector procurement notice is relevant to Adrastichyperlink.
@@ -203,28 +207,33 @@ Respond strictly in valid JSON matching this schema:
     "whyItMayNotFit": "Potential delivery or scale challenges",
     "partnerRequirement": "Consortium/subcontractor needed, or NONE (DIRECT BID)",
     "bidEffort": "LOW" | "MEDIUM" | "HIGH",
-    "recommendation": "STRONG BID" | "INVESTIGATE" | "WATCH" | "PARTNER" | "PASS",
+    "recommendation": "STRONG BID" | "INVESTIGATE" | "WATCH" | "PARTNER" | "PASS" | "REVIEW",
     "isPartnerRoute": false
   }
 }
 `;
 
       try {
-        const result = await GeminiClient.generateJson<{
+        const callResult = await GeminiClient.generateJsonWithDiagnostics<{
           relevance: 'STRONG' | 'POSSIBLE' | 'WEAK' | 'REJECT';
           serviceMatches: string[];
           reason: string;
           falsePositive: boolean;
           confidence: number;
           analysis?: GeminiAnalysis;
-        }>(prompt, {
-          tier: 1,
-          temperature: 0.1,
-          systemInstruction:
-            'You are an expert UK public procurement classifier evaluating creative studio fit. Be strict, truthful, and reject surveillance, CCTV, sign manufacturing, and non-creative IT.',
-        });
+        }>(
+          prompt,
+          {
+            tier: 1,
+            temperature: 0.1,
+            systemInstruction:
+              'You are an expert UK public procurement classifier evaluating creative studio fit. Be strict, truthful, and reject surveillance, CCTV, sign manufacturing, physical fitout, and non-creative IT.',
+          },
+          3
+        );
 
-        if (result) {
+        if (callResult.success && callResult.data) {
+          const result = callResult.data;
           const validated = TenderClassificationSchema.safeParse(result);
           const data = validated.success
             ? validated.data
@@ -262,6 +271,7 @@ Respond strictly in valid JSON matching this schema:
             deterministic: deterministicResult,
             ai: {
               status: 'RUN',
+              aiReviewStatus: 'COMPLETED',
               relevance: data.relevance,
               primaryPurpose,
               serviceMatches: data.serviceMatches,
@@ -281,19 +291,25 @@ Respond strictly in valid JSON matching this schema:
             },
           };
         } else {
+          // Gemini failed after bounded retries
+          const errorCategory = callResult.errorCategory || 'UNKNOWN';
+          const errorMessage = callResult.errorMessage || 'Gemini returned empty response';
           return {
             deterministic: deterministicResult,
             ai: {
               status: 'FAILED',
+              aiReviewStatus: 'REQUIRED',
+              failureCategory: errorCategory,
               serviceMatches: [],
-              reason: 'Gemini returned empty response',
+              reason: `[${errorCategory}] ${errorMessage}`,
               model: GeminiClient.getModelForTier(1),
             },
             final: {
-              relevance: deterministic.qualification,
-              reason: `Gemini empty response; retained via deterministic filter: ${deterministic.matchedKeywords.join(', ')}`,
+              relevance: 'POSSIBLE', // preserve deterministic candidate for safety
+              reason: `AI REVIEW INCOMPLETE (${errorCategory}): ${errorMessage}. Retained via deterministic filter for manual review.`,
               serviceMatches: deterministic.matchedKeywords,
-              reasonFinalQualificationWasChosen: 'Gemini classification failed; unverified candidate retained for manual review.',
+              recommendation: 'REVIEW', // NOT an AI-derived recommendation
+              reasonFinalQualificationWasChosen: `AI REVIEW INCOMPLETE [${errorCategory}]: ${errorMessage}. Unverified candidate retained as POSSIBLE with recommendation REVIEW.`,
             },
           };
         }
@@ -303,15 +319,18 @@ Respond strictly in valid JSON matching this schema:
           deterministic: deterministicResult,
           ai: {
             status: 'FAILED',
+            aiReviewStatus: 'REQUIRED',
+            failureCategory: 'UNKNOWN',
             serviceMatches: [],
             reason: `Gemini execution error: ${err.message}`,
             model: GeminiClient.getModelForTier(1),
           },
           final: {
             relevance: deterministic.qualification,
-            reason: `Gemini failed; retained via deterministic filter: ${deterministic.matchedKeywords.join(', ')}`,
+            reason: `AI REVIEW INCOMPLETE: ${err.message}. Retained via deterministic filter for manual review.`,
             serviceMatches: deterministic.matchedKeywords,
-            reasonFinalQualificationWasChosen: `Gemini execution error (${err.message}); retained via deterministic filter for manual review.`,
+            recommendation: 'REVIEW',
+            reasonFinalQualificationWasChosen: `AI REVIEW INCOMPLETE [UNKNOWN]: ${err.message}. Unverified candidate retained as POSSIBLE with recommendation REVIEW.`,
           },
         };
       }
@@ -322,6 +341,7 @@ Respond strictly in valid JSON matching this schema:
       deterministic: deterministicResult,
       ai: {
         status: 'UNCONFIGURED',
+        aiReviewStatus: 'REQUIRED',
         serviceMatches: [],
       },
       final: {
@@ -331,7 +351,8 @@ Respond strictly in valid JSON matching this schema:
             ? `Deterministic match on creative keywords: ${deterministic.matchedKeywords.join(', ')} (Gemini unconfigured)`
             : 'Candidate retained for manual review (Gemini unconfigured)',
         serviceMatches: deterministic.matchedKeywords,
-        reasonFinalQualificationWasChosen: 'Gemini unconfigured; candidate retained based solely on deterministic keyword match.',
+        recommendation: 'REVIEW',
+        reasonFinalQualificationWasChosen: 'Gemini unconfigured; candidate retained based solely on deterministic keyword match with recommendation REVIEW.',
       },
     };
   }
