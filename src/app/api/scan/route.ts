@@ -25,21 +25,23 @@ export async function POST(req: Request) {
     const fts = new FindATenderConnector();
     const sourceRecord = await sourcesRepo.getById('find_a_tender');
 
+    const limit = typeof body.limit === 'number' ? body.limit : 25;
+
     let scanResult;
     if (scanType === 'paged' || cursorUrl) {
       if (stage === 'planning') {
-        scanResult = await fts.scanPipeline({ maxPages, cursorUrl });
+        scanResult = await fts.scanPipeline({ maxPages, cursorUrl, limit });
       } else {
-        scanResult = await fts.scanLiveNotices({ maxPages, cursorUrl });
+        scanResult = await fts.scanLiveNotices({ maxPages, cursorUrl, limit });
       }
     } else if (scanType === 'quick') {
       const sinceDate = sourceRecord?.lastSuccessfulScanAt
         ? new Date(sourceRecord.lastSuccessfulScanAt)
         : new Date(Date.now() - 3 * 86400000);
-      scanResult = await fts.scanNewNotices(sinceDate, { maxPages });
+      scanResult = await fts.scanNewNotices(sinceDate, { maxPages, limit });
     } else if (scanType === 'deep') {
-      const liveRes = await fts.scanLiveNotices({ maxPages });
-      const pipeRes = await fts.scanPipeline({ maxPages });
+      const liveRes = await fts.scanLiveNotices({ maxPages, limit });
+      const pipeRes = await fts.scanPipeline({ maxPages, limit });
       scanResult = {
         sourceId: 'find_a_tender',
         scannedAt: new Date().toISOString(),
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
       };
     } else {
       // 'full'
-      scanResult = await fts.scanLiveNotices({ maxPages });
+      scanResult = await fts.scanLiveNotices({ maxPages, limit });
     }
 
     const rawReleasesFetched = scanResult.noticesChecked;
@@ -145,40 +147,63 @@ export async function POST(req: Request) {
         }
 
         // 4. Classify candidate with distinct deterministic and Gemini evaluation
-        const classification = await TenderClassifier.classify({
-          title: candidate.title,
-          buyer: candidate.buyerName,
-          description: candidate.description,
-          cpvCodes: candidate.cpvCodes,
-          valueAmount: candidate.valueAmount,
-          submissionDeadline: candidate.submissionDeadline || undefined,
-          noticeType: isPlanningNotice ? 'planning' : 'tender',
-        });
+        let classification: any;
+        if (isExpired) {
+          classification = {
+            deterministic: {
+              relevance: deterministic.qualification,
+              matchedKeywords: deterministic.matchedKeywords,
+              score: deterministic.score,
+              isExpired: true,
+            },
+            ai: {
+              status: 'NOT_RUN' as const,
+              serviceMatches: deterministic.matchedKeywords,
+            },
+            final: {
+              relevance: deterministic.qualification,
+              reason: 'Tender submission deadline has passed (Expired).',
+              serviceMatches: deterministic.matchedKeywords,
+            },
+          };
+        } else {
+          classification = await TenderClassifier.classify({
+            title: candidate.title,
+            buyer: candidate.buyerName,
+            description: candidate.description,
+            cpvCodes: candidate.cpvCodes,
+            valueAmount: candidate.valueAmount,
+            submissionDeadline: candidate.submissionDeadline || undefined,
+            noticeType: isPlanningNotice ? 'planning' : 'tender',
+          });
 
-        if (classification.ai.status === 'RUN') {
-          geminiRequested++;
-          geminiSucceeded++;
-          geminiAnalysed++;
-        } else if (classification.ai.status === 'FAILED') {
-          geminiRequested++;
-          geminiFailed++;
+          if (classification.ai.status === 'RUN') {
+            geminiRequested++;
+            geminiSucceeded++;
+            geminiAnalysed++;
+          } else if (classification.ai.status === 'FAILED') {
+            geminiRequested++;
+            geminiFailed++;
+          }
         }
 
-        // 4. Record buyer
+        // 5. Record buyer
         const buyer = candidate.buyerName
           ? await buyersRepo.getOrCreate(candidate.buyerName, {
               buyerType: candidate.buyerType,
             })
           : null;
 
-        // 5. Live URL verification with strict Grade A criteria
-        const verification = await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
-          expectedNoticeId: candidate.noticeId,
-          expectedOcid: candidate.ocid,
-          expectedTitle: candidate.title,
-          expectedBuyer: candidate.buyerName,
-          expectedDeadline: candidate.submissionDeadline,
-        });
+        // 6. Live URL verification with strict Grade A criteria
+        const verification = isExpired
+          ? { grade: 'A' as const, isValid: true, notes: 'Expired notice', httpStatus: 200, finalRedirectUrl: candidate.officialNoticeUrl }
+          : await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
+              expectedNoticeId: candidate.noticeId,
+              expectedOcid: candidate.ocid,
+              expectedTitle: candidate.title,
+              expectedBuyer: candidate.buyerName,
+              expectedDeadline: candidate.submissionDeadline,
+            });
 
         if (verification.grade === 'X' || !verification.isValid) {
           urlVerificationFailures++;

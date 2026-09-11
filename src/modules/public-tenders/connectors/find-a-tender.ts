@@ -7,6 +7,7 @@ export interface PagedScanOptions {
   safetyLimitNotices?: number;
   cursorUrl?: string | null;
   stage?: 'tender' | 'planning';
+  limit?: number;
 }
 
 export class FindATenderConnector implements ProcurementConnector {
@@ -25,9 +26,10 @@ export class FindATenderConnector implements ProcurementConnector {
     if (options.cursorUrl) {
       return this.executeOcdsPagedFetch(options.cursorUrl, options);
     }
+    const limit = options.limit || 25;
     const params = new URLSearchParams();
     params.set('stages', 'tender');
-    params.set('limit', '100');
+    params.set('limit', String(limit));
 
     if (since instanceof Date && !isNaN(since.getTime())) {
       const iso = since.toISOString().slice(0, 19);
@@ -42,7 +44,8 @@ export class FindATenderConnector implements ProcurementConnector {
    * paginating through cursor pages up to safety limit.
    */
   async scanLiveNotices(options: PagedScanOptions = {}): Promise<ScanResult> {
-    const url = options.cursorUrl || `${this.ocdsEndpoint}?stages=tender&limit=100`;
+    const limit = options.limit || 25;
+    const url = options.cursorUrl || `${this.ocdsEndpoint}?stages=tender&limit=${limit}`;
     return this.executeOcdsPagedFetch(url, options);
   }
 
@@ -50,7 +53,8 @@ export class FindATenderConnector implements ProcurementConnector {
    * Retrieves early market engagement and pipeline procurement notices (planning stage).
    */
   async scanPipeline(options: PagedScanOptions = {}): Promise<ScanResult> {
-    const url = options.cursorUrl || `${this.ocdsEndpoint}?stages=planning&limit=100`;
+    const limit = options.limit || 25;
+    const url = options.cursorUrl || `${this.ocdsEndpoint}?stages=planning&limit=${limit}`;
     return this.executeOcdsPagedFetch(url, options);
   }
 
