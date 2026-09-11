@@ -5,10 +5,17 @@ import { DeterministicFilter } from '@/modules/public-tenders/services/determini
 import { UrlVerifier } from '@/modules/public-tenders/services/url-verifier';
 import { getTendersRepository, getSourcesRepository, getBuyersRepository } from '@/shared/database/db';
 import { SourceHealthStatus } from '@/shared/database/repositories/sources';
+import { requireApiAuth } from '@/shared/auth/require-api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
+  // Direct route-level authorization guard
+  const auth = await requireApiAuth(req);
+  if (!auth.authenticated) {
+    return auth.response;
+  }
+
   const startTime = Date.now();
   try {
     const tendersRepo = getTendersRepository();
@@ -446,4 +453,11 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function GET() {
+  return NextResponse.json(
+    { error: 'Method Not Allowed', message: 'Scan operations must be triggered via POST.' },
+    { status: 405, headers: { Allow: 'POST' } }
+  );
 }

@@ -2,8 +2,15 @@
 import { NextResponse } from 'next/server';
 import { UrlVerifier } from '@/modules/public-tenders/services/url-verifier';
 import { SourceRegistry } from '@/modules/public-tenders/connectors/registry';
+import { requireApiAuth } from '@/shared/auth/require-api-auth';
 
 export async function POST(req: Request) {
+  // Direct route-level authorization guard
+  const auth = await requireApiAuth(req);
+  if (!auth.authenticated) {
+    return auth.response;
+  }
+
   try {
     const { url } = await req.json();
     if (!url || typeof url !== 'string') {

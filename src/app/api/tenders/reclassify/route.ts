@@ -1,12 +1,19 @@
 // src/app/api/tenders/reclassify/route.ts
 import { NextResponse } from 'next/server';
 import { ReclassificationSweep } from '@/modules/public-tenders/services/reclassification-sweep';
+import { requireApiAuth } from '@/shared/auth/require-api-auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
-export async function POST() {
+export async function POST(req: Request) {
+  // Direct route-level authorization guard
+  const auth = await requireApiAuth(req);
+  if (!auth.authenticated) {
+    return auth.response;
+  }
+
   try {
     const result = await ReclassificationSweep.execute();
     return NextResponse.json({

@@ -1,12 +1,19 @@
 // src/app/api/tenders/route.ts
 import { NextResponse } from 'next/server';
 import { getTendersRepository } from '@/shared/database/db';
+import { requireApiAuth } from '@/shared/auth/require-api-auth';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
 export async function GET(req: Request) {
+  // Direct route-level authorization guard
+  const auth = await requireApiAuth(req);
+  if (!auth.authenticated) {
+    return auth.response;
+  }
+
   try {
     const tendersRepo = getTendersRepository();
     const { searchParams } = new URL(req.url);
