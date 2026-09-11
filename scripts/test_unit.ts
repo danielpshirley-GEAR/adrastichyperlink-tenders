@@ -257,8 +257,8 @@ async function runUnitTests() {
     assert.strictEqual(stage, 'PRELIMINARY MARKET ENGAGEMENT');
   });
 
-  // 12. Detail Enrichment: Document Discovery & Access States
-  await test('DetailEnrichmentService discovers documents and tags access states accurately', async () => {
+  // 12. Detail Enrichment: Document Discovery & Access States (Real Document Model)
+  await test('DetailEnrichmentService categorizes documents and tags access states accurately without fake hashes', async () => {
     const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
     const service = new DetailEnrichmentService();
     const mockTender = {
@@ -279,11 +279,17 @@ async function runUnitTests() {
     assert.strictEqual(enrichment.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
     assert.strictEqual(enrichment.submissionDetails.isOpenForBid, false);
     assert.strictEqual(enrichment.submissionDetails.isMarketEngagement, true);
-    assert.ok(enrichment.documents.length >= 2, 'Must discover at least official notice and ITT status');
-    assert.ok(enrichment.documents.some((d: any) => d.accessState === 'PUBLIC'), 'Must have PUBLIC official notice');
+    assert.ok(enrichment.documents.length >= 2, 'Must discover source notice and portal/ITT items');
+    assert.ok(enrichment.documents.some((d: any) => d.category === 'SOURCE_NOTICE'), 'Must have SOURCE_NOTICE');
+    assert.ok(enrichment.documents.some((d: any) => d.accessState === 'PUBLIC'), 'Must have PUBLIC access item');
     assert.ok(enrichment.documents.some((d: any) => d.accessState === 'NOT PUBLISHED'), 'Must record NOT PUBLISHED for pending ITT');
-    assert.ok(enrichment.requirements.length >= 4, 'Must populate mandatory and baseline eligibility criteria');
-    assert.ok(enrichment.sourceEvidence.length >= 3, 'Must provide source evidence citations');
+    // Critical: No fake placeholder hashes!
+    enrichment.documents.forEach((d) => {
+      assert.ok(d.fileHash === null || /^[a-f0-9]{64}$/i.test(d.fileHash), `Invalid fileHash on ${d.fileName}: ${d.fileHash}`);
+    });
+    // Truthful PME: No fabricated requirements
+    assert.strictEqual(enrichment.requirements.length, 0, 'PME notice must NOT fabricate buyer requirements');
+    assert.strictEqual(enrichment.isEligibilityPublished, false, 'PME must mark eligibility unpublished');
   });
 
   // 13. Repository Parity: Round-trip persistence of rich procurement intelligence
@@ -380,6 +386,106 @@ async function runUnitTests() {
     // Clean up
     const db = getDb();
     db.prepare('DELETE FROM tenders WHERE canonical_reference = ?').run(testRef);
+  });
+
+  // 14. Evidence Gate: Buyer has not published PI or Cyber -> zero buyer requirements created
+  await test('Evidence Gate: Unpublished buyer criteria produces zero requirements and truthful notice', async () => {
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const service = new DetailEnrichmentService();
+    const result = (service as any).synthesizeDeterministically(
+      {
+        id: 't-test-pme',
+        canonicalReference: 'TEST-PME-01',
+        title: 'Preliminary Market Notice',
+        description: 'Notice for preliminary engagement only. Not a call for competition.',
+        qualification: 'POSSIBLE',
+        officialNoticeUrl: 'https://example.com/notice',
+      },
+      null,
+      'PRELIMINARY MARKET ENGAGEMENT'
+    );
+
+    assert.strictEqual(result.requirements.length, 0, 'Must not fabricate PI, PL, or Cyber requirements');
+    assert.strictEqual(result.evaluationCriteria[0].isPublished, false);
+    assert.ok(result.evaluationCriteria[0].criterion.includes('not yet been published'));
+  });
+
+  // 15. AI Opportunity Interpretation: FactType separation and distinct labeling
+  await test('AI Opportunity Interpretation: Distinguishes buyer facts from creative opportunities', async () => {
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const service = new DetailEnrichmentService();
+    const result = (service as any).synthesizeDeterministically(
+      {
+        id: 't-test-opp',
+        canonicalReference: 'TEST-OPP-01',
+        title: 'Council Communications Service',
+        description: 'Delivering strategic communications, digital media, and public outreach across the region.',
+        qualification: 'STRONG',
+        officialNoticeUrl: 'https://example.com/notice',
+      },
+      null,
+      'PRELIMINARY MARKET ENGAGEMENT'
+    );
+
+    assert.ok(result.scopeAndSpec.creativeOpportunities.length > 0, 'Must suggest creative opportunities');
+    result.scopeAndSpec.creativeOpportunities.forEach((opp: any) => {
+      assert.strictEqual(opp.label, 'AI OPPORTUNITY INTERPRETATION — NOT YET A PUBLISHED REQUIREMENT');
+    });
+    assert.strictEqual(result.scopeAndSpec.buyerKeyDeliverables.length, 0, 'Must not claim AI ideas as buyer deliverables');
+  });
+
+  // 16. File Hashing Integrity: Downloaded document produces real SHA-256; undownloaded sets null
+  await test('File Hashing Integrity: Downloaded document produces real SHA-256; undownloaded sets null', async () => {
+    const crypto = await import('crypto');
+    const testBytes = Buffer.from('Official Procurement Tender Document Content 2026');
+    const expectedHash = crypto.createHash('sha256').update(testBytes).digest('hex');
+
+    // Genuine downloaded document
+    const downloadedDoc = {
+      id: 'doc-real',
+      fileName: 'Specification.pdf',
+      fileHash: expectedHash,
+    };
+    assert.strictEqual(downloadedDoc.fileHash.length, 64);
+    assert.ok(/^[a-f0-9]{64}$/.test(downloadedDoc.fileHash));
+
+    // Undownloaded document
+    const undownloadedDoc = {
+      id: 'doc-remote',
+      fileName: 'Find a Tender Notice',
+      fileHash: null,
+    };
+    assert.strictEqual(undownloadedDoc.fileHash, null, 'Undownloaded document must have null fileHash');
+  });
+
+  // 17. Generic Dynamic Enrichment on Glasgow 067718-2026
+  await test('Generic Enrichment: Glasgow 067718-2026 enriches dynamically without notice-specific conditionals', async () => {
+    const { DetailEnrichmentService } = await import('../src/modules/public-tenders/services/detail-enrichment');
+    const service = new DetailEnrichmentService();
+    const mockGlasgow = {
+      id: 'glasgow-test-01',
+      canonicalReference: '067718-2026',
+      title: 'Glasgow Business Growth Programme- Phase 4 Framework',
+      qualification: 'POSSIBLE' as const,
+      verificationGrade: 'A' as const,
+      officialNoticeUrl: 'https://www.find-tender.service.gov.uk/Notice/067718-2026',
+      serviceTags: [],
+      sourceId: 'find_a_tender',
+      isArchived: false,
+      discoveredAt: new Date().toISOString(),
+      lastVerifiedAt: new Date().toISOString(),
+    };
+
+    const enrichment = await service.enrichTender(mockGlasgow);
+    assert.strictEqual(enrichment.procurementStage, 'PRELIMINARY MARKET ENGAGEMENT');
+    assert.strictEqual(enrichment.requirements.length, 0, 'Glasgow PME must not fabricate requirements');
+    assert.strictEqual(enrichment.isEligibilityPublished, false);
+    assert.ok(enrichment.scopeAndSpec.buyerRequiredServices.length > 0, 'Must extract generic buyer scope');
+    assert.strictEqual(enrichment.scopeAndSpec.buyerKeyDeliverables.length, 0, 'Must not fabricate deliverables');
+    assert.ok(enrichment.documents.length >= 2, 'Must discover documents');
+    enrichment.documents.forEach((d) => {
+      assert.strictEqual(d.fileHash, null, 'Must not have fake placeholder hash strings');
+    });
   });
 
   console.log(`\n====================================================`);

@@ -76,6 +76,8 @@ export interface TenderSummary {
   requirements?: TenderRequirement[];
   documents?: TenderDocumentItem[];
   enrichment?: TenderEnrichment;
+  isEligibilityPublished?: boolean;
+  eligibilityNoticeText?: string;
 }
 
 export type ProcurementStage =
@@ -88,7 +90,32 @@ export type ProcurementStage =
   | 'AWARD'
   | 'OTHER';
 
-export type DocumentAccessState = 'PUBLIC' | 'LOGIN REQUIRED' | 'NOT PUBLISHED' | 'BROKEN';
+export type DocumentAccessState =
+  | 'PUBLIC'
+  | 'LOGIN REQUIRED'
+  | 'NOT PUBLISHED'
+  | 'ACCESS NOT YET VERIFIED'
+  | 'BROKEN';
+
+export type FactType =
+  | 'EXPLICIT_BUYER_FACT'
+  | 'DOCUMENT_EXTRACTED_FACT'
+  | 'PORTAL_FACT'
+  | 'AI_INTERPRETATION'
+  | 'UNKNOWN';
+
+export type DocumentItemCategory =
+  | 'SOURCE_NOTICE'
+  | 'PORTAL_LINK'
+  | 'PUBLISHED_DOCUMENT'
+  | 'EXPECTED_FUTURE_DOCUMENT';
+
+export interface DocumentCounts {
+  sourceNotices: number;
+  portalLinks: number;
+  publishedDocuments: number;
+  expectedFutureDocuments: number;
+}
 
 export interface TenderRequirement {
   id: string;
@@ -97,6 +124,9 @@ export interface TenderRequirement {
   requirementName: string;
   buyerRequirementText: string;
   sourceCitation: string;
+  factType?: FactType;
+  sourceUrl?: string;
+  evidenceText?: string;
   adrasticCapabilityText?: string;
   status: 'PASS' | 'PASS_WITH_ACTION' | 'ACTION_REQUIRED' | 'PARTNER_REQUIRED' | 'FAIL' | 'UNKNOWN';
   mandatory: boolean;
@@ -105,9 +135,10 @@ export interface TenderRequirement {
 export interface TenderDocumentItem {
   id: string;
   fileName: string;
-  docType: 'itt' | 'specification' | 'sq' | 'pricing' | 'social_value' | 'clarifications' | 'terms' | 'official_notice' | 'buyer_portal' | 'other' | string;
+  docType: 'itt' | 'specification' | 'sq' | 'pricing' | 'social_value' | 'clarifications' | 'terms' | 'official_notice' | 'buyer_portal' | 'form' | 'other' | string;
+  category?: DocumentItemCategory;
   fileSizeBytes?: number;
-  fileHash: string;
+  fileHash: string | null; // Genuine SHA-256 of downloaded bytes OR null. Never placeholder strings.
   sourceUrl?: string;
   downloadUrl?: string;
   accessState?: DocumentAccessState;
@@ -124,22 +155,44 @@ export interface EnrichedEvaluationCriterion {
   weightingPercentage?: number | null;
   description?: string;
   isPublished: boolean;
+  factType?: FactType;
+}
+
+export interface CreativeOpportunity {
+  opportunity: string;
+  rationale: string;
+  label: 'AI OPPORTUNITY INTERPRETATION — NOT YET A PUBLISHED REQUIREMENT';
+  relevantCoreScope?: string;
 }
 
 export interface ScopeAndSpecification {
-  whatBuyerWants: string;
-  businessObjective: string;
-  requiredServices: string[];
-  keyDeliverables: string[];
+  whatBuyerWants: string; // Stated by buyer
+  businessObjective: string; // Stated by buyer
+  requiredServices: string[]; // Backward compat alias for buyerRequiredServices
+  buyerRequiredServices: string[]; // Explicit scope points stated in notice
+  keyDeliverables: string[]; // Backward compat alias for buyerKeyDeliverables
+  buyerKeyDeliverables: string[]; // Only deliverables explicitly specified by buyer (empty if unstated)
+  creativeOpportunities: CreativeOpportunity[]; // AI interpretations - clearly distinguished
   targetAudience: string;
   contractScope: string;
   locations: string[];
   duration: string;
-  importantDates: Array<{ label: string; date: string; description?: string }>;
-  creativeMarketingDigitalOverlap: string[];
+  importantDates: Array<{ label: string; date: string; description?: string; factType?: FactType }>;
+  creativeMarketingDigitalOverlap: string[]; // Legacy alias
   servicesOutsideCoreCapability: string[];
   isDetailedScopePublished: boolean;
   scopeNoticeText?: string;
+  isEligibilityPublished?: boolean;
+  eligibilityNoticeText?: string;
+}
+
+export interface MarketEngagementFormStatus {
+  isReferenced: boolean;
+  statusText: string;
+  portalUrl?: string;
+  accessState: DocumentAccessState;
+  deadlineText?: string | null;
+  instructions?: string;
 }
 
 export interface SubmissionAndEngagementDetails {
@@ -158,6 +211,7 @@ export interface SubmissionAndEngagementDetails {
   participationInstructions: string;
   isOpenForBid: boolean;
   isMarketEngagement: boolean;
+  marketEngagementForm?: MarketEngagementFormStatus;
 }
 
 export interface FitAndRisksAssessment {
@@ -171,9 +225,17 @@ export interface SourceEvidenceItem {
   id: string;
   topic: string;
   fact: string;
+  factType: FactType;
+  value?: string | number | null;
   source: string;
-  sourceType: 'OFFICIAL_OCDS_NOTICE' | 'DOCUMENT' | 'PORTAL' | 'BUYER_COMMUNICATION' | 'INFERENCE';
-  confidence: 'VERIFIED' | 'HIGH' | 'ESTIMATED';
+  sourceType: 'OFFICIAL_OCDS_NOTICE' | 'DOCUMENT' | 'PORTAL' | 'BUYER_COMMUNICATION' | 'UNKNOWN';
+  sourceUrl?: string;
+  sourceDocumentId?: string;
+  page?: number | null;
+  section?: string;
+  evidenceText?: string;
+  confidence: 'VERIFIED' | 'HIGH' | 'ESTIMATED' | 'MEDIUM' | 'LOW';
+  isVerified: boolean;
 }
 
 export interface TenderEnrichment {
@@ -183,7 +245,10 @@ export interface TenderEnrichment {
   procurementStage: ProcurementStage;
   scopeAndSpec: ScopeAndSpecification;
   documents: TenderDocumentItem[];
+  documentCounts?: DocumentCounts;
   requirements: TenderRequirement[];
+  isEligibilityPublished?: boolean;
+  eligibilityNoticeText?: string;
   evaluationCriteria: EnrichedEvaluationCriterion[];
   submissionDetails: SubmissionAndEngagementDetails;
   fitAndRisks: FitAndRisksAssessment;
