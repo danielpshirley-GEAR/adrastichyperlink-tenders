@@ -15,10 +15,27 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   try {
     const tendersRepo = getTendersRepository();
     const id = params.id;
-    let tender = await tendersRepo.getById(id);
-    if (!tender) {
-      tender = await tendersRepo.getByCanonicalReference(id);
+    let tender = await tendersRepo.findResilient(id);
+
+    // Dynamic fallback: If not found in local repo, but matches official Find a Tender notice pattern (e.g. 067718-2026)
+    if (!tender && /^\d{6}-\d{4}$/.test(id.trim())) {
+      try {
+        const { FindATenderConnector } = await import('@/modules/public-tenders/connectors/find-a-tender');
+        const connector = new FindATenderConnector();
+        const notice = await connector.fetchNotice(id.trim());
+        if (notice) {
+          tender = await tendersRepo.save({
+            ...notice,
+            canonicalReference: notice.noticeId,
+            discoveredAt: new Date().toISOString(),
+            lastVerifiedAt: new Date().toISOString(),
+          });
+        }
+      } catch (fetchErr: any) {
+        console.warn(`[Api/Tenders/${id}] Dynamic notice fallback fetch failed:`, fetchErr.message);
+      }
     }
+
     if (!tender) {
       return NextResponse.json({ error: 'Tender not found' }, { status: 404 });
     }

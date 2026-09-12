@@ -1,6 +1,6 @@
 // src/app/api/sources/route.ts
 import { NextResponse } from 'next/server';
-import { getSourcesRepository } from '@/shared/database/db';
+import { SourceRegistry } from '@/modules/public-tenders/connectors/registry';
 import { requireApiAuth } from '@/shared/auth/require-api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -13,10 +13,9 @@ export async function GET(req: Request) {
   }
 
   try {
-    const sourcesRepo = getSourcesRepository();
-    const sources = await sourcesRepo.getAll();
-    const activeSources = sources.filter((s) => s.isActive);
-    const healthySources = sources.filter((s) => s.healthStatus === 'healthy');
+    const sources = await SourceRegistry.getInstance().getSourcesMeta();
+    const activeSources = sources.filter((s) => s.health !== 'not_implemented');
+    const healthySources = sources.filter((s) => s.health === 'healthy');
 
     return NextResponse.json({
       count: sources.length,

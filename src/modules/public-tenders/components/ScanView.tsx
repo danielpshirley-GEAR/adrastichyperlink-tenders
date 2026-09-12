@@ -91,7 +91,8 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
     }
   };
 
-  const activeSourcesCount = sources.filter((s) => s.health === 'healthy').length;
+  const ftsSource = sources.find((s) => s.id === 'find_a_tender' || s.id === 'find-a-tender');
+  const activeSourcesCount = sources.filter((s) => s.health === 'healthy' || (s.health !== 'not_implemented' && s.health !== 'untested')).length;
   const notImplementedCount = sources.filter((s) => s.health === 'not_implemented').length;
 
   return (
@@ -130,12 +131,16 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
               </span>
             ) : (
               <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-800 text-[10px] font-bold border border-rose-200">
-                NOT CONFIGURED
+                {healthData?.database?.engine === 'none' ? 'OFFLINE' : 'NOT CONFIGURED'}
               </span>
             )}
           </div>
           <div className="text-sm font-bold text-gallery-charcoal">
-            {healthData?.database?.type === 'postgres' ? 'Supabase / PostgreSQL' : healthData?.database?.healthy ? 'Persistent SQLite' : 'Database Offline'}
+            {healthData?.database?.engine === 'postgres'
+              ? 'Supabase / PostgreSQL'
+              : healthData?.database?.engine === 'sqlite'
+                ? 'Persistent SQLite'
+                : 'Database Offline'}
           </div>
           <p className="text-[11px] text-gallery-muted font-mono">
             {healthData?.database?.totalTenders ?? 0} saved tenders in repository
@@ -175,11 +180,19 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
               <span>CONNECTOR HEALTH</span>
             </div>
             <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-              {activeSourcesCount} / {sources.length} Active
+              {activeSourcesCount} / {sources.length || 7} Active
             </span>
           </div>
           <div className="text-sm font-bold text-gallery-charcoal">
-            Find a Tender — Healthy
+            {ftsSource?.health === 'healthy'
+              ? 'Find a Tender — Healthy'
+              : ftsSource?.health === 'degraded'
+                ? 'Find a Tender — Degraded'
+                : ftsSource?.health === 'error'
+                  ? 'Find a Tender — Error'
+                  : ftsSource?.health === 'untested'
+                    ? 'Find a Tender — Untested'
+                    : 'Find a Tender — Not Implemented'}
           </div>
           <p className="text-[11px] text-gallery-muted font-mono">
             {notImplementedCount} connectors Not Implemented

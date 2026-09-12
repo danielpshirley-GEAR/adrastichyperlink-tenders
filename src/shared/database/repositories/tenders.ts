@@ -21,6 +21,10 @@ export class SqliteTendersRepository implements ITendersRepository {
     return TendersRepository.getByOcid(ocid);
   }
 
+  async findResilient(identifier: string): Promise<TenderSummary | null> {
+    return TendersRepository.findResilient(identifier);
+  }
+
   async save(tender: Partial<TenderSummary> & { canonicalReference: string; title: string; buyerName: string }): Promise<TenderSummary> {
     return TendersRepository.save(tender);
   }
@@ -104,7 +108,7 @@ export class TendersRepository {
 
   static async getByCanonicalReference(ref: string): Promise<TenderSummary | null> {
     const db = getDb();
-    const row = db.prepare('SELECT * FROM tenders WHERE canonical_reference = ?').get(ref) as any;
+    const row = db.prepare('SELECT * FROM tenders WHERE canonical_reference = ? OR latest_notice_id = ?').get(ref, ref) as any;
     if (!row) return null;
     return mapRowToTender(row);
   }
@@ -114,6 +118,73 @@ export class TendersRepository {
     const row = db.prepare('SELECT * FROM tenders WHERE ocid = ?').get(ocid) as any;
     if (!row) return null;
     return mapRowToTender(row);
+  }
+
+  static async findResilient(identifier: string): Promise<TenderSummary | null> {
+    if (!identifier || typeof identifier !== 'string') return null;
+    const cleanId = decodeURIComponent(identifier).trim();
+    if (!cleanId) return null;
+
+    // 1. Direct database UUID lookup
+    const byId = await this.getById(cleanId);
+    if (byId) return byId;
+
+    // 2. Canonical reference or latestNoticeId lookup
+    const byRef = await this.getByCanonicalReference(cleanId);
+    if (byRef) return byRef;
+
+    // 3. Direct OCID lookup
+    const byOcid = await this.getByOcid(cleanId);
+    if (byOcid) return byOcid;
+
+    const db = getDb();
+
+    // 4. Check latest_notice_id directly
+    try {
+      const byNoticeIdRow = db.prepare('SELECT * FROM tenders WHERE latest_notice_id = ?').get(cleanId) as any;
+      if (byNoticeIdRow) return mapRowToTender(byNoticeIdRow);
+    } catch {
+      // Ignore
+    }
+
+    // 5. Map stale UUID or notice reference via source_notices table
+    try {
+      const noticeRows = db.prepare(
+        'SELECT tender_id, notice_id, ocid FROM source_notices WHERE tender_id = ? OR notice_id = ? OR ocid = ? OR id = ? ORDER BY id DESC LIMIT 5'
+      ).all(cleanId, cleanId, cleanId, cleanId) as any[];
+
+      if (noticeRows && noticeRows.length > 0) {
+        for (const row of noticeRows) {
+          if (row.tender_id && row.tender_id !== cleanId) {
+            const mapped = await this.getById(row.tender_id);
+            if (mapped) return mapped;
+          }
+          if (row.ocid) {
+            const mapped = await this.getByOcid(row.ocid);
+            if (mapped) return mapped;
+          }
+          if (row.notice_id) {
+            const mapped = await this.getByCanonicalReference(row.notice_id);
+            if (mapped) return mapped;
+          }
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    // 6. Map stale UUID via source_links table
+    try {
+      const linkRow = db.prepare('SELECT tender_id FROM source_links WHERE tender_id = ? LIMIT 1').get(cleanId) as any;
+      if (linkRow?.tender_id && linkRow.tender_id !== cleanId) {
+        const mapped = await this.getById(linkRow.tender_id);
+        if (mapped) return mapped;
+      }
+    } catch {
+      // Ignore
+    }
+
+    return null;
   }
 
   static async save(

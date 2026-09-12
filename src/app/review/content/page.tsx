@@ -146,7 +146,7 @@ export default function ReviewContentPage() {
                     {tender.canonicalReference} • {tender.buyerName} ({tender.buyerType})
                   </span>
                   <h3 className="text-sm font-bold text-gallery-charcoal">
-                    <Link href={`/review/tenders/${tender.id}`} className="text-tender-primary hover:underline">
+                    <Link href={`/review/tenders/${tender.canonicalReference || tender.id}`} className="text-tender-primary hover:underline">
                       {tender.title}
                     </Link>
                   </h3>

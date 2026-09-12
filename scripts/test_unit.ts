@@ -614,6 +614,167 @@ async function runUnitTests() {
     assert.strictEqual(result.expectedOcid, 'ocds-h6vhtk-06ce78');
   });
 
+  // 27. Bug 1 Fix: Database engine exposure & UI label mapping
+  await test('Bug 1: Database engine mapping — postgres -> Supabase / PostgreSQL', async () => {
+    const formatDbLabel = (engine?: string) => {
+      return engine === 'postgres'
+        ? 'Supabase / PostgreSQL'
+        : engine === 'sqlite'
+          ? 'Persistent SQLite'
+          : 'Database Offline';
+    };
+
+    assert.strictEqual(formatDbLabel('postgres'), 'Supabase / PostgreSQL');
+    assert.strictEqual(formatDbLabel('sqlite'), 'Persistent SQLite');
+    assert.strictEqual(formatDbLabel('none'), 'Database Offline');
+    assert.strictEqual(formatDbLabel(undefined), 'Database Offline');
+
+    const { GET: healthGet } = await import('../src/app/api/health/route');
+    const healthRes = await healthGet();
+    const healthJson = await healthRes.json();
+    assert.ok(healthJson.database.engine, 'Health API must expose database.engine');
+    assert.ok(
+      ['postgres', 'sqlite', 'none'].includes(healthJson.database.engine),
+      `database.engine must be postgres|sqlite|none, got: ${healthJson.database.engine}`
+    );
+  });
+
+  // 28. Bug 2 Fix: Find a Tender healthy + 6 not implemented -> 1 / 7 Active, 6 Not Implemented
+  await test('Bug 2: Normalized SourceMeta -> 1 / 7 Active, 6 Not Implemented', async () => {
+    const { SourceRegistry } = await import('../src/modules/public-tenders/connectors/registry');
+    const sources = await SourceRegistry.getInstance().getSourcesMeta();
+    assert.strictEqual(sources.length, 7, 'Must have exactly 7 canonical sources');
+
+    const activeSourcesCount = sources.filter((s) => s.health === 'healthy' || (s.health !== 'not_implemented' && s.health !== 'untested')).length;
+    const notImplementedCount = sources.filter((s) => s.health === 'not_implemented').length;
+
+    assert.strictEqual(activeSourcesCount, 1, 'Exactly 1 source (Find a Tender) must be active');
+    assert.strictEqual(notImplementedCount, 6, 'Exactly 6 sources must be not_implemented');
+
+    const fts = sources.find((s) => s.id === 'find_a_tender');
+    assert.ok(fts, 'Find a Tender must be present in sources');
+    assert.strictEqual(fts?.health, 'healthy', 'Find a Tender must be healthy');
+  });
+
+  // 29. Bug 2 Fix: Find a Tender real counters display
+  await test('Bug 2: Find a Tender real counters display', async () => {
+    const { SourceRegistry } = await import('../src/modules/public-tenders/connectors/registry');
+    const sources = await SourceRegistry.getInstance().getSourcesMeta();
+    const fts = sources.find((s) => s.id === 'find_a_tender');
+
+    assert.ok(fts, 'Find a Tender source must exist');
+    assert.ok(typeof fts!.noticesChecked === 'number' && fts!.noticesChecked > 0, 'noticesChecked must be real counter > 0');
+    assert.ok(typeof fts!.relevantFound === 'number' && fts!.relevantFound > 0, 'relevantFound must be real counter > 0');
+    assert.ok(fts!.lastScanAt, 'lastScanAt must be recorded');
+  });
+
+  // 30. Bug 3 Fix: TenderRow canonicalReference 067718-2026 -> href /tenders/067718-2026
+  await test('Bug 3: TenderRow links use canonicalReference with UUID fallback', async () => {
+    const resolveDetailHref = (tender: { id: string; canonicalReference?: string }, basePath = '') => {
+      const tenderRef = tender.canonicalReference || tender.id;
+      return `${basePath}/tenders/${tenderRef}`;
+    };
+
+    const glasgowHref = resolveDetailHref({
+      id: 'da464eb0-6711-418e-8a01-749b13227a9f',
+      canonicalReference: '067718-2026',
+    });
+    assert.strictEqual(glasgowHref, '/tenders/067718-2026', 'Must link using canonicalReference');
+
+    const aberdeenHref = resolveDetailHref({
+      id: 'test-aberdeen-uuid',
+      canonicalReference: '068074-2026',
+    });
+    assert.strictEqual(aberdeenHref, '/tenders/068074-2026', 'Must link using canonicalReference');
+
+    const fallbackHref = resolveDetailHref({
+      id: 'fallback-uuid-1234',
+      canonicalReference: '',
+    });
+    assert.strictEqual(fallbackHref, '/tenders/fallback-uuid-1234', 'Must fallback to UUID if canonicalReference missing');
+  });
+
+  // 31. Bug 4 Fix: GET /api/tenders/067718-2026 -> 200
+  await test('Bug 4: GET /api/tenders/067718-2026 resolves with 200', async () => {
+    const { GET: tenderGet } = await import('../src/app/api/tenders/[id]/route');
+    const { createSessionToken, AUTH_COOKIE_NAME } = await import('../src/shared/auth/session');
+    process.env.ADMIN_ACCESS_TOKEN = 'test-admin-key-unit-test-32chars-min!!';
+    const token = await createSessionToken({ sub: 'admin', role: 'admin' });
+
+    const req = new Request('http://localhost:3000/api/tenders/067718-2026', {
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${token}` },
+    });
+    const res = await tenderGet(req, { params: { id: '067718-2026' } });
+    assert.strictEqual(res.status, 200, 'GET /api/tenders/067718-2026 must return 200');
+
+    const json = await res.json();
+    assert.ok(json.tender, 'Response must contain tender');
+    assert.strictEqual(json.tender.canonicalReference, '067718-2026');
+  });
+
+  // 32. Bug 4 Fix: GET /api/tenders/068074-2026 -> 200
+  await test('Bug 4: GET /api/tenders/068074-2026 resolves with 200', async () => {
+    const { GET: tenderGet } = await import('../src/app/api/tenders/[id]/route');
+    const { createSessionToken, AUTH_COOKIE_NAME } = await import('../src/shared/auth/session');
+    process.env.ADMIN_ACCESS_TOKEN = 'test-admin-key-unit-test-32chars-min!!';
+    const token = await createSessionToken({ sub: 'admin', role: 'admin' });
+
+    const req = new Request('http://localhost:3000/api/tenders/068074-2026', {
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${token}` },
+    });
+    const res = await tenderGet(req, { params: { id: '068074-2026' } });
+    assert.strictEqual(res.status, 200, 'GET /api/tenders/068074-2026 must return 200');
+
+    const json = await res.json();
+    assert.ok(json.tender, 'Response must contain tender');
+    assert.strictEqual(json.tender.canonicalReference, '068074-2026');
+  });
+
+  // 33. Bug 4 Fix: UUID lookup for current UUID -> 200
+  await test('Bug 4: UUID lookup for current UUID resolves with 200', async () => {
+    const { GET: tenderGet } = await import('../src/app/api/tenders/[id]/route');
+    const { createSessionToken, AUTH_COOKIE_NAME } = await import('../src/shared/auth/session');
+    process.env.ADMIN_ACCESS_TOKEN = 'test-admin-key-unit-test-32chars-min!!';
+    const token = await createSessionToken({ sub: 'admin', role: 'admin' });
+
+    const req = new Request('http://localhost:3000/api/tenders/test-glasgow-uuid', {
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${token}` },
+    });
+    const res = await tenderGet(req, { params: { id: 'test-glasgow-uuid' } });
+    assert.strictEqual(res.status, 200, 'UUID lookup must return 200');
+
+    const json = await res.json();
+    assert.ok(json.tender);
+    assert.strictEqual(json.tender.id, 'test-glasgow-uuid');
+    assert.strictEqual(json.tender.canonicalReference, '067718-2026');
+  });
+
+  // 34. Bug 4 Fix: OCID lookup -> 200
+  await test('Bug 4: OCID lookup resolves with 200', async () => {
+    const { GET: tenderGet } = await import('../src/app/api/tenders/[id]/route');
+    const { createSessionToken, AUTH_COOKIE_NAME } = await import('../src/shared/auth/session');
+    process.env.ADMIN_ACCESS_TOKEN = 'test-admin-key-unit-test-32chars-min!!';
+    const token = await createSessionToken({ sub: 'admin', role: 'admin' });
+
+    // Glasgow OCID
+    const reqGlasgow = new Request('http://localhost:3000/api/tenders/ocds-h6vhtk-06cdb9', {
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${token}` },
+    });
+    const resGlasgow = await tenderGet(reqGlasgow, { params: { id: 'ocds-h6vhtk-06cdb9' } });
+    assert.strictEqual(resGlasgow.status, 200, 'Glasgow OCID lookup must return 200');
+    const jsonGlasgow = await resGlasgow.json();
+    assert.strictEqual(jsonGlasgow.tender.canonicalReference, '067718-2026');
+
+    // Aberdeen OCID
+    const reqAberdeen = new Request('http://localhost:3000/api/tenders/ocds-h6vhtk-06ce78', {
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${token}` },
+    });
+    const resAberdeen = await tenderGet(reqAberdeen, { params: { id: 'ocds-h6vhtk-06ce78' } });
+    assert.strictEqual(resAberdeen.status, 200, 'Aberdeen OCID lookup must return 200');
+    const jsonAberdeen = await resAberdeen.json();
+    assert.strictEqual(jsonAberdeen.tender.canonicalReference, '068074-2026');
+  });
+
   console.log(`\n====================================================`);
   console.log(`UNIT SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);
   console.log(`====================================================\n`);

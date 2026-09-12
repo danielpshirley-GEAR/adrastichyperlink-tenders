@@ -77,6 +77,7 @@ export async function GET() {
     database: {
       status: dbStatusString,
       type: dbTypeString,
+      engine: dbHealth.type,
       configured: dbHealth.configured,
       reachable: dbHealth.healthy,
       healthy: dbHealth.healthy,

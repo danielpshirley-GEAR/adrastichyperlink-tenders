@@ -126,6 +126,83 @@ export class SupabaseTendersRepository implements ITendersRepository {
     return this.mapRow(data);
   }
 
+  async findResilient(identifier: string): Promise<TenderSummary | null> {
+    if (!identifier || typeof identifier !== 'string') return null;
+    const cleanId = decodeURIComponent(identifier).trim();
+    if (!cleanId) return null;
+
+    // 1. Direct database UUID lookup
+    try {
+      const byId = await this.getById(cleanId);
+      if (byId) return byId;
+    } catch {
+      // Ignore syntax error if not UUID format
+    }
+
+    // 2. Canonical reference or latestNoticeId lookup
+    try {
+      const byRef = await this.getByCanonicalReference(cleanId);
+      if (byRef) return byRef;
+    } catch {
+      // Ignore
+    }
+
+    // 3. Direct OCID lookup
+    try {
+      const byOcid = await this.getByOcid(cleanId);
+      if (byOcid) return byOcid;
+    } catch {
+      // Ignore
+    }
+
+    // 4. Map stale UUID or notice reference via source_notices table
+    try {
+      const { data: noticeRows } = await this.client
+        .from('source_notices')
+        .select('tender_id, notice_id, ocid')
+        .or(`tender_id.eq.${cleanId},notice_id.eq.${cleanId},ocid.eq.${cleanId},id.eq.${cleanId}`)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (noticeRows && noticeRows.length > 0) {
+        for (const row of noticeRows) {
+          if (row.tender_id && row.tender_id !== cleanId) {
+            const mapped = await this.getById(row.tender_id);
+            if (mapped) return mapped;
+          }
+          if (row.ocid) {
+            const mapped = await this.getByOcid(row.ocid);
+            if (mapped) return mapped;
+          }
+          if (row.notice_id) {
+            const mapped = await this.getByCanonicalReference(row.notice_id);
+            if (mapped) return mapped;
+          }
+        }
+      }
+    } catch {
+      // Ignore source_notices probe error
+    }
+
+    // 5. Map stale UUID via source_links table
+    try {
+      const { data: linkRows } = await this.client
+        .from('source_links')
+        .select('tender_id')
+        .eq('tender_id', cleanId)
+        .limit(1);
+
+      if (linkRows && linkRows.length > 0 && linkRows[0].tender_id) {
+        const mapped = await this.getById(linkRows[0].tender_id);
+        if (mapped) return mapped;
+      }
+    } catch {
+      // Ignore
+    }
+
+    return null;
+  }
+
   async save(
     tender: Partial<TenderSummary> & {
       canonicalReference: string;

@@ -12,7 +12,8 @@ interface TenderRowProps {
 }
 
 export function TenderRow({ tender, basePath = '' }: TenderRowProps) {
-  const detailHref = `${basePath}/tenders/${tender.id}`;
+  const tenderRef = tender.canonicalReference || tender.id;
+  const detailHref = `${basePath}/tenders/${tenderRef}`;
 
   const qualificationColors: Record<string, string> = {
     STRONG: 'bg-emerald-50 text-emerald-800 border-emerald-200',
