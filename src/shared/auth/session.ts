@@ -147,7 +147,7 @@ export async function verifySessionToken(token: string | null | undefined): Prom
     const isValid = await crypto.subtle.verify(
       'HMAC',
       key,
-      signatureBytes.buffer as ArrayBuffer,
+      signatureBytes,
       dataToVerify
     );
     if (!isValid) {
