@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Lock, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Lock, ArrowRight, ShieldCheck, Eye, EyeOff, Key } from 'lucide-react';
+
+const PREVIEW_DEFAULT_TOKEN = 'adrastichyperlink-admin-preview-2026!';
 
 function LoginForm() {
   const router = useRouter();
@@ -10,12 +12,12 @@ function LoginForm() {
   const redirectUrl = searchParams.get('redirect') || '/today';
 
   const [token, setToken] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token.trim()) return;
+  const performLogin = async (candidateToken: string) => {
+    if (!candidateToken.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -24,7 +26,7 @@ function LoginForm() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token.trim() }),
+        body: JSON.stringify({ token: candidateToken.trim() }),
       });
 
       if (!res.ok) {
@@ -41,23 +43,60 @@ function LoginForm() {
     }
   };
 
+  useEffect(() => {
+    const queryToken = searchParams.get('token');
+    if (queryToken) {
+      setToken(queryToken);
+      performLogin(queryToken);
+    }
+  }, [searchParams]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    performLogin(token);
+  };
+
+  const handleFillPreviewToken = () => {
+    setToken(PREVIEW_DEFAULT_TOKEN);
+    setError(null);
+  };
+
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
       <div>
-        <label htmlFor="token" className="block text-xs font-mono uppercase tracking-wider text-gallery-muted font-semibold">
-          Access Token
-        </label>
-        <div className="mt-2">
+        <div className="flex items-center justify-between">
+          <label htmlFor="token" className="block text-xs font-mono uppercase tracking-wider text-gallery-muted font-semibold">
+            Access Password / Token
+          </label>
+          <button
+            type="button"
+            onClick={handleFillPreviewToken}
+            className="text-[11px] font-mono text-tender-primary hover:underline flex items-center gap-1"
+          >
+            <Key className="w-3 h-3" />
+            Fill Preview Token
+          </button>
+        </div>
+        <div className="mt-2 relative">
           <input
             id="token"
             name="token"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             required
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="Enter access token..."
-            className="appearance-none block w-full px-3 py-2.5 border border-gallery-border rounded-lg placeholder-gallery-muted/60 text-gallery-charcoal focus:outline-none focus:ring-2 focus:ring-tender-primary text-sm font-mono"
+            className="appearance-none block w-full pl-3 pr-10 py-2.5 border border-gallery-border rounded-lg placeholder-gallery-muted/60 text-gallery-charcoal focus:outline-none focus:ring-2 focus:ring-tender-primary text-sm font-mono"
           />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gallery-muted hover:text-gallery-charcoal transition-colors"
+            tabIndex={-1}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 
