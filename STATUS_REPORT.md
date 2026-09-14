@@ -3,7 +3,8 @@
 ## 1. Executive Summary & Git Identity
 - **Repository**: `danielpshirley-GEAR/adrastichyperlink-tenders`
 - **Active Branch**: `preview` (PR #1 against `main`)
-- **Verified Commit**: `62a318ffa3c1117099fda8426d6183a4064ef786` (`62a318f`)
+- **Verified Commits**: `62a318f`, `5af21b1` (Authentication tolerance, show-password toggle, and 1-click preview token)
+- **Persistent Live Preview**: Auto-reconnecting background daemon active
 - **Safety Commitments**: 
   - `main` branch: NOT modified (0 commits).
   - Production deployment: NOT modified / untouched.
