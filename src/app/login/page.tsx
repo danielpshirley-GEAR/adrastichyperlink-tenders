@@ -1,10 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Lock, ArrowRight, ShieldCheck, Eye, EyeOff, Key } from 'lucide-react';
-
-const PREVIEW_DEFAULT_TOKEN = 'adrastichyperlink-admin-preview-2026!';
+import { Lock, ArrowRight, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
 function LoginForm() {
   const router = useRouter();
@@ -16,8 +14,9 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const performLogin = async (candidateToken: string) => {
-    if (!candidateToken.trim()) return;
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token.trim()) return;
 
     setLoading(true);
     setError(null);
@@ -26,7 +25,7 @@ function LoginForm() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: candidateToken.trim() }),
+        body: JSON.stringify({ token: token.trim() }),
       });
 
       if (!res.ok) {
@@ -37,46 +36,18 @@ function LoginForm() {
       router.push(redirectUrl);
       router.refresh();
     } catch (err: any) {
-      setError(err.message || 'Invalid administrator token');
+      setError(err.message || 'Invalid access token');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    const queryToken = searchParams.get('token');
-    if (queryToken) {
-      setToken(queryToken);
-      performLogin(queryToken);
-    }
-  }, [searchParams]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    performLogin(token);
-  };
-
-  const handleFillPreviewToken = () => {
-    setToken(PREVIEW_DEFAULT_TOKEN);
-    setError(null);
-  };
-
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
       <div>
-        <div className="flex items-center justify-between">
-          <label htmlFor="token" className="block text-xs font-mono uppercase tracking-wider text-gallery-muted font-semibold">
-            Access Password / Token
-          </label>
-          <button
-            type="button"
-            onClick={handleFillPreviewToken}
-            className="text-[11px] font-mono text-tender-primary hover:underline flex items-center gap-1"
-          >
-            <Key className="w-3 h-3" />
-            Fill Preview Token
-          </button>
-        </div>
+        <label htmlFor="token" className="block text-xs font-mono uppercase tracking-wider text-gallery-muted font-semibold">
+          Access Token
+        </label>
         <div className="mt-2 relative">
           <input
             id="token"

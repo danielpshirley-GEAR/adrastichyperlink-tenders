@@ -1,8 +1,18 @@
-// src/app/api/auth/login/route.ts
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { createSessionToken, AUTH_COOKIE_NAME, DEFAULT_SESSION_TTL_SECONDS } from '@/shared/auth/session';
 
 export const dynamic = 'force-dynamic';
+
+function constantTimeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 export async function POST(request: Request) {
   try {
@@ -18,19 +28,10 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json().catch(() => null);
-    const candidateRaw = body?.token?.trim() || '';
-    const cleanCandidate = candidateRaw.replace(/^["']|["']$/g, '').trim();
-    const cleanAdmin = adminToken.replace(/^["']|["']$/g, '').trim();
+    const candidate = typeof body?.token === 'string' ? body.token.trim() : '';
 
-    const isMatch =
-      cleanCandidate === cleanAdmin ||
-      cleanCandidate === cleanAdmin.replace(/!$/, '') ||
-      cleanCandidate + '!' === cleanAdmin;
-
-    if (!isMatch) {
-      console.warn(
-        `[Auth] Login rejected. Expected length: ${adminToken.length}, received length: ${candidateRaw.length}`
-      );
+    if (!candidate || !constantTimeCompare(candidate, adminToken)) {
+      console.warn('[Auth] Login attempt rejected: Invalid authentication credentials');
       return NextResponse.json({ error: 'Invalid authentication token' }, { status: 401 });
     }
 

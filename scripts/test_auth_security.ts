@@ -223,6 +223,96 @@ export async function runAuthSecurityTests(): Promise<void> {
     assert.strictEqual(verified.role, 'admin');
   });
 
+  // 18. Client source contains no hardcoded preview credential or PREVIEW_DEFAULT_TOKEN
+  await test('18. Client source contains no hardcoded preview credential', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const loginFilePath = path.resolve(__dirname, '../src/app/login/page.tsx');
+    const content = fs.readFileSync(loginFilePath, 'utf8');
+
+    assert.ok(!content.includes('PREVIEW_DEFAULT_TOKEN'), 'Must not define PREVIEW_DEFAULT_TOKEN');
+    assert.ok(!content.includes('admin-preview'), 'Must not contain any literal preview credential');
+    assert.ok(!content.includes('adrastichyperlink-admin'), 'Must not contain literal admin secret');
+  });
+
+  // 19. /login?token=anything does NOT auto-login (no query param credential ingestion)
+  await test('19. Login page does NOT read token credentials from URL query parameters', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const loginFilePath = path.resolve(__dirname, '../src/app/login/page.tsx');
+    const content = fs.readFileSync(loginFilePath, 'utf8');
+
+    assert.ok(!content.includes("searchParams.get('token')"), 'Must not read searchParams.get("token")');
+    assert.ok(!content.includes('searchParams.get("token")'), 'Must not read searchParams.get("token")');
+    assert.ok(!content.includes('queryToken'), 'Must not ingest queryToken');
+  });
+
+  // 20. Fill Preview Token button does not exist
+  await test('20. "Fill Preview Token" button does not exist in login component', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const loginFilePath = path.resolve(__dirname, '../src/app/login/page.tsx');
+    const content = fs.readFileSync(loginFilePath, 'utf8');
+
+    assert.ok(!content.includes('Fill Preview Token'), 'Must not contain "Fill Preview Token" text');
+    assert.ok(!content.includes('handleFillPreviewToken'), 'Must not define handleFillPreviewToken function');
+  });
+
+  // 21. Incorrect token missing one character -> 401
+  await test('21. Incorrect token missing one character returns 401', async () => {
+    const truncatedToken = TEST_ADMIN_TOKEN.slice(0, -1);
+    const req = new Request('http://localhost:3000/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: truncatedToken }),
+    });
+    const res = await loginPost(req);
+    assert.strictEqual(res.status, 401);
+  });
+
+  // 22. Incorrect token with extra character -> 401
+  await test('22. Incorrect token with extra character returns 401', async () => {
+    const extendedToken = TEST_ADMIN_TOKEN + '!';
+    const req = new Request('http://localhost:3000/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: extendedToken }),
+    });
+    const res = await loginPost(req);
+    assert.strictEqual(res.status, 401);
+  });
+
+  // 23. Exact ADMIN_ACCESS_TOKEN -> login succeeds with 200 and signed session cookie
+  await test('23. Exact ADMIN_ACCESS_TOKEN succeeds with 200 and signed cookie', async () => {
+    const req = new Request('http://localhost:3000/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: TEST_ADMIN_TOKEN }),
+    });
+    const res = await loginPost(req);
+    assert.strictEqual(res.status, 200);
+    const setCookie = res.headers.get('set-cookie');
+    assert.ok(setCookie && setCookie.includes(AUTH_COOKIE_NAME));
+  });
+
+  // 24. Signed session -> authenticated access succeeds; tampered session -> 401
+  await test('24. Signed session succeeds (200), tampered session returns 401', async () => {
+    const validSession = await createSessionToken({ sub: 'admin', role: 'admin' });
+    const reqValid = new Request('http://localhost:3000/api/tenders', {
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${validSession}` },
+    });
+    const resValid = await tendersGet(reqValid);
+    assert.strictEqual(resValid.status, 200, 'Valid signed session must return 200');
+
+    // Tampered session
+    const tampered = validSession.slice(0, -5) + 'xxxxx';
+    const reqTampered = new Request('http://localhost:3000/api/tenders', {
+      headers: { cookie: `${AUTH_COOKIE_NAME}=${tampered}` },
+    });
+    const resTampered = await tendersGet(reqTampered);
+    assert.strictEqual(resTampered.status, 401, 'Tampered session must return 401');
+  });
+
   console.log(`\n====================================================`);
   console.log(`AUTH SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);
   console.log('====================================================\n');

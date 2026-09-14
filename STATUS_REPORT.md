@@ -3,13 +3,13 @@
 ## 1. Executive Summary & Git Identity
 - **Repository**: `danielpshirley-GEAR/adrastichyperlink-tenders`
 - **Active Branch**: `preview` (PR #1 against `main`)
-- **Verified Commits**: `62a318f`, `5af21b1` (Authentication tolerance, show-password toggle, and 1-click preview token)
+- **Verified Commits**: `62a318f` (Core resilient data contract & multi-key lookup), `d254eac` (Auto-reconnecting tunnel daemon), plus strict auth cleanup
 - **Persistent Live Preview**: Auto-reconnecting background daemon active
 - **Safety Commitments**: 
   - `main` branch: NOT modified (0 commits).
   - Production deployment: NOT modified / untouched.
   - Contracts Finder: NOT added (strictly scoping Find a Tender evidence integrity).
-- **Automated Test Results**: **51 / 51 tests passing** (34 unit & offline tests + 17 authentication & route security tests).
+- **Automated Test Results**: **58 / 58 tests passing** (34 unit & offline tests + 24 authentication & security tests).
 
 ---
 
