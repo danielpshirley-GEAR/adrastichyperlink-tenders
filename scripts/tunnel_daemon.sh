@@ -15,6 +15,7 @@ while true; do
       echo "=================================================="
       echo "[Tunnel Daemon] LIVE PREVIEW URL: $FOUND_URL"
       echo "=================================================="
+      (cd "$ROOT_DIR" && git add "$URL_FILE" && git commit -m "chore: update live preview tunnel URL [skip ci]" && git push origin preview) >/dev/null 2>&1 || true
     fi
   done
   echo "[Tunnel Daemon] Connection dropped. Reconnecting in 2 seconds..."
