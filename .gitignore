@@ -16,3 +16,6 @@ scratch_test.png
 
 # Local Netlify folder
 .netlify
+
+bin/
+

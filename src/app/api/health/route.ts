@@ -24,6 +24,7 @@ export async function GET() {
   }
 
   // 1. Genuine runtime identification
+  const isRender = Boolean(process.env.RENDER === 'true');
   const isNetlify = Boolean(
     process.env.NETLIFY === 'true' ||
     process.env.IS_NETLIFY === 'true' ||
@@ -32,10 +33,11 @@ export async function GET() {
     (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('netlify'))
   );
 
-  const runtime = isNetlify ? 'Netlify Next.js' : 'Next.js Node.js Server';
+  const runtime = isRender ? 'Render Web Service' : (isNetlify ? 'Netlify Next.js' : 'Next.js Node.js Server');
 
-  // 2. Genuine commit identification (Strict priority: COMMIT_REF > NEXT_PUBLIC_COMMIT_SHA > BUILD_COMMIT_SHA > VERCEL_GIT_COMMIT_SHA)
+  // 2. Genuine commit identification (Strict priority: RENDER_GIT_COMMIT > COMMIT_REF > NEXT_PUBLIC_COMMIT_SHA > BUILD_COMMIT_SHA > VERCEL_GIT_COMMIT_SHA)
   const rawCommit =
+    process.env.RENDER_GIT_COMMIT ||
     process.env.COMMIT_REF ||
     process.env.NEXT_PUBLIC_COMMIT_SHA ||
     process.env.BUILD_COMMIT_SHA ||
@@ -44,13 +46,19 @@ export async function GET() {
   const commit = (rawCommit && rawCommit.trim()) || 'UNKNOWN';
 
   // 3. Genuine deploy information
-  const rawDeployId = process.env.DEPLOY_ID || process.env.NETLIFY_DEPLOY_ID;
+  const rawDeployId = process.env.RENDER_SERVICE_ID || process.env.DEPLOY_ID || process.env.NETLIFY_DEPLOY_ID;
   const deployId = (rawDeployId && rawDeployId.trim()) || null;
 
-  const rawDeployContext = process.env.CONTEXT || process.env.DEPLOY_CONTEXT;
+  const rawDeployContext = isRender
+    ? 'render-free'
+    : (process.env.CONTEXT || process.env.DEPLOY_CONTEXT);
   const deployContext = (rawDeployContext && rawDeployContext.trim()) || null;
 
-  const rawBranch = process.env.BRANCH || process.env.DEPLOY_BRANCH || process.env.VERCEL_GIT_COMMIT_REF;
+  const rawBranch =
+    process.env.RENDER_GIT_BRANCH ||
+    process.env.BRANCH ||
+    process.env.DEPLOY_BRANCH ||
+    process.env.VERCEL_GIT_COMMIT_REF;
   const branch = (rawBranch && rawBranch.trim()) || null;
 
   const dbStatusString = dbHealth.healthy

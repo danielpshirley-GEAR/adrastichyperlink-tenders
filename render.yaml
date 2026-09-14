@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: adrastichyperlink-tenders-preview
+    runtime: node
+    plan: free
+    branch: preview
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ADMIN_ACCESS_TOKEN
+        sync: false
+      - key: SESSION_SECRET
+        sync: false

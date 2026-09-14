@@ -124,8 +124,8 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealth> {
     }
   }
 
-  // If in production and Supabase is NOT configured: FAIL CLOSED. NEVER fall back to SQLite in production!
-  if (process.env.NODE_ENV === 'production') {
+  // If in production or on Render and Supabase is NOT configured: FAIL CLOSED. NEVER fall back to SQLite!
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
     return {
       configured: false,
       type: 'none',
@@ -183,8 +183,8 @@ export function getTendersRepository(): ITendersRepository {
   if (isSupabaseConfigured()) {
     return new SupabaseTendersRepository();
   }
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required in production.');
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required on Render and in production.');
   }
   return new SqliteTendersRepository();
 }
@@ -197,8 +197,8 @@ export function getSourcesRepository(): ISourcesRepository {
   if (isSupabaseConfigured()) {
     return new SupabaseSourcesRepository();
   }
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required in production.');
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required on Render and in production.');
   }
   return new SqliteSourcesRepository();
 }
@@ -211,8 +211,8 @@ export function getBuyersRepository(): IBuyersRepository {
   if (isSupabaseConfigured()) {
     return new SupabaseBuyersRepository();
   }
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required in production.');
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required on Render and in production.');
   }
   return new SqliteBuyersRepository();
 }
@@ -225,15 +225,15 @@ export function getApplicationsRepository(): IApplicationsRepository {
   if (isSupabaseConfigured()) {
     return new SupabaseApplicationsRepository();
   }
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required in production.');
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Supabase / PostgreSQL is required on Render and in production.');
   }
   return new SqliteApplicationsRepository();
 }
 
 export function getDb(): Database.Database {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Direct SQLite access is disabled in production.');
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: Direct SQLite access is disabled on Render and in production.');
   }
   return getSqliteDb();
 }

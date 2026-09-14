@@ -9,8 +9,8 @@ const DB_PATH = path.join(DB_DIR, 'adrastichyperlink.db');
 let dbInstance: Database.Database | null = null;
 
 export function getSqliteDb(): Database.Database {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: SQLite is strictly forbidden in production. Supabase / PostgreSQL must be configured.');
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true') {
+    throw new Error('PRODUCTION DATABASE NOT CONFIGURED: SQLite is strictly forbidden in production or Render environments. Supabase / PostgreSQL must be configured.');
   }
 
   if (dbInstance) {
