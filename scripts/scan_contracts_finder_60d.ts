@@ -120,21 +120,31 @@ async function main() {
     const lifecycleStatus = isExpired ? 'EXPIRED' : (isRejected ? 'REJECTED' : 'ACTIVE');
 
     // Live URL Verification
-    const verification = (isExpired || isRejected)
-      ? {
-          grade: 'A' as const,
-          isValid: true,
-          httpStatus: 200,
-          finalRedirectUrl: candidate.officialNoticeUrl,
-          notes: 'Candidate excluded from active probe',
-        }
-      : await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
-          expectedNoticeId: candidate.noticeId,
-          expectedOcid: candidate.ocid,
-          expectedTitle: candidate.title,
-          expectedBuyer: candidate.buyerName,
-          expectedDeadline: candidate.submissionDeadline,
-        });
+    let verification: {
+      grade: 'A' | 'B' | 'C' | 'D' | 'X';
+      isValid: boolean;
+      httpStatus?: number | null;
+      finalRedirectUrl?: string | null;
+      notes: string;
+    };
+
+    if (isExpired || isRejected) {
+      verification = {
+        grade: 'X',
+        isValid: false,
+        httpStatus: null,
+        finalRedirectUrl: null,
+        notes: 'URL verification not performed because record was excluded before verification.',
+      };
+    } else {
+      verification = await UrlVerifier.verifyNoticeUrl(candidate.officialNoticeUrl, {
+        expectedNoticeId: candidate.noticeId,
+        expectedOcid: candidate.ocid,
+        expectedTitle: candidate.title,
+        expectedBuyer: candidate.buyerName,
+        expectedDeadline: candidate.submissionDeadline,
+      });
+    }
 
     if (!isExpired && !isRejected && verifiedLivePages.length < 5) {
       verifiedLivePages.push({
@@ -250,11 +260,24 @@ async function main() {
   console.log(`Total Records Written to Database: ${savedCount}`);
   console.log(`Total Execution Time: ${durationTotal}s`);
 
-  console.log('\n--- TOP 5 VERIFIED REAL CANDIDATE NOTICES ---');
-  const sample = processedCandidates.slice(0, 5);
-  for (let i = 0; i < sample.length; i++) {
-    const c = sample[i];
-    console.log(`\n[Notice #${i + 1}]`);
+  console.log('\n--- STRONGEST GENUINELY RELEVANT ACTIVE OPPORTUNITIES ---');
+  const activeRelevant = processedCandidates
+    .filter((c) => c.lifecycleStatus === 'ACTIVE' && (c.qualification === 'STRONG' || c.qualification === 'POSSIBLE'))
+    .sort((a, b) => {
+      if (a.qualification === 'STRONG' && b.qualification !== 'STRONG') return -1;
+      if (b.qualification === 'STRONG' && a.qualification !== 'STRONG') return 1;
+      if (a.verificationGrade === 'A' && b.verificationGrade !== 'A') return -1;
+      if (b.verificationGrade === 'A' && a.verificationGrade !== 'A') return 1;
+      return (b.valueAmount || 0) - (a.valueAmount || 0);
+    });
+
+  if (activeRelevant.length === 0) {
+    console.log('No active STRONG/POSSIBLE opportunities found in this scan window.');
+  }
+
+  for (let i = 0; i < activeRelevant.length; i++) {
+    const c = activeRelevant[i];
+    console.log(`\n[Active Opportunity #${i + 1}]`);
     console.log(`  Title: ${c.title}`);
     console.log(`  Notice ID: ${c.noticeId}`);
     console.log(`  OCID: ${c.ocid}`);

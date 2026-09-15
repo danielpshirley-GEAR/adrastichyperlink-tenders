@@ -593,6 +593,14 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       updatePayload.last_scan_error = stats.lastScanError;
     }
 
+    if (stats?.noticesScannedDelta || stats?.relevantFoundDelta) {
+      const current = await this.getById(id);
+      if (current) {
+        updatePayload.total_notices_scanned = (current.totalNoticesScanned || 0) + (stats.noticesScannedDelta || 0);
+        updatePayload.total_relevant_found = (current.totalRelevantFound || 0) + (stats.relevantFoundDelta || 0);
+      }
+    }
+
     const { error } = await this.client.from('sources').update(updatePayload).eq('id', id);
     if (error) {
       throw new Error(`Failed to update source health: ${error.message}`);

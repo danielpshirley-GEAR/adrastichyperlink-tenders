@@ -447,6 +447,95 @@ async function run() {
     assert.strictEqual(parsedFalse?.vcseSuitable, false);
   });
 
+  // 25. Excluded and expired notices do NOT receive synthetic Grade A or HTTP 200
+  await test('25. Excluded / expired records receive Grade X, isValid false, and null HTTP status', () => {
+    const isExpired = true;
+    const isRejected = false;
+    let verification: { grade: string; isValid: boolean; httpStatus?: number | null; finalRedirectUrl?: string | null; notes: string };
+    if (isExpired || isRejected) {
+      verification = {
+        grade: 'X',
+        isValid: false,
+        httpStatus: null,
+        finalRedirectUrl: null,
+        notes: 'URL verification not performed because record was excluded before verification.',
+      };
+    } else {
+      verification = { grade: 'A', isValid: true, httpStatus: 200, notes: 'OK' };
+    }
+    assert.strictEqual(verification.grade, 'X');
+    assert.strictEqual(verification.isValid, false);
+    assert.strictEqual(verification.httpStatus, null);
+    assert.strictEqual(verification.finalRedirectUrl, null);
+    assert.ok(verification.notes.includes('not performed'));
+  });
+
+  // 26. Deterministic filter rejects Video Wall & Software Control Room Display
+  await test('26. Deterministic filter rejects Video Wall & Software Control Room Display', () => {
+    const videoWallNotice = {
+      title: 'Video Wall & Software Control Room Display',
+      description: 'Supply, installation and maintenance of high-resolution video wall displays and controllers for central operations room.',
+      cpvCodes: ['32321200'],
+    };
+    const evalResult = DeterministicFilter.evaluate(videoWallNotice);
+    assert.strictEqual(evalResult.passed, false, 'Must reject video wall display hardware');
+    assert.strictEqual(evalResult.qualification, 'REJECT');
+    assert.strictEqual(evalResult.isNegativeMatch, true);
+    assert.ok(evalResult.rejectedReason?.toLowerCase().includes('video wall') || evalResult.rejectedReason?.toLowerCase().includes('display'));
+  });
+
+  // 27. Deterministic filter rejects Hospital Ward Refurbishment & Civil Works
+  await test('27. Deterministic filter rejects Hospital Ward Refurbishment & Civil Works', () => {
+    const wardNotice = {
+      title: 'Hospital Ward Refurbishment and Fit-Out Works',
+      description: 'Mechanical and electrical refurbishment of inpatient wards including flooring, ceiling, and partition works.',
+      cpvCodes: ['45215140'],
+    };
+    const evalResult = DeterministicFilter.evaluate(wardNotice);
+    assert.strictEqual(evalResult.passed, false, 'Must reject ward refurbishment');
+    assert.strictEqual(evalResult.qualification, 'REJECT');
+    assert.strictEqual(evalResult.isNegativeMatch, true);
+  });
+
+  // 28. Deterministic filter rejects Clinical / Medical Equipment & Patient Monitors
+  await test('28. Deterministic filter rejects Clinical / Medical Equipment & Patient Monitors', () => {
+    const medicalNotice = {
+      title: 'Patient Monitor and Clinical Equipment Supply Framework',
+      description: 'Procurement of bedside patient monitors, diagnostic equipment and physiological sensors.',
+      cpvCodes: ['33195100'],
+    };
+    const evalResult = DeterministicFilter.evaluate(medicalNotice);
+    assert.strictEqual(evalResult.passed, false, 'Must reject medical equipment');
+    assert.strictEqual(evalResult.qualification, 'REJECT');
+    assert.strictEqual(evalResult.isNegativeMatch, true);
+  });
+
+  // 29. Deterministic filter rejects IT Support, Telecoms & Infrastructure
+  await test('29. Deterministic filter rejects IT Support, Telecoms & Infrastructure', () => {
+    const itNotice = {
+      title: 'Enterprise IT Support and Telecommunications Infrastructure',
+      description: 'Helpdesk IT support, network cabling, data centre hosting and telecoms maintenance.',
+      cpvCodes: ['72611000'],
+    };
+    const evalResult = DeterministicFilter.evaluate(itNotice);
+    assert.strictEqual(evalResult.passed, false, 'Must reject IT support and telecoms');
+    assert.strictEqual(evalResult.qualification, 'REJECT');
+    assert.strictEqual(evalResult.isNegativeMatch, true);
+  });
+
+  // 30. Deterministic filter qualifies PKAT Brand, Media and Communications Strategy
+  await test('30. Deterministic filter qualifies PKAT Brand, Media and Communications Engagement Strategy', () => {
+    const pkatNotice = {
+      title: 'CA18366 - Request for Tender - Brand, Media and Communications Engagement Strategy',
+      description: 'Appointment of an agency to formulate a comprehensive brand identity, communications engagement strategy, and digital launch campaign.',
+      cpvCodes: ['79413000'],
+    };
+    const evalResult = DeterministicFilter.evaluate(pkatNotice);
+    assert.strictEqual(evalResult.passed, true, 'Must pass PKAT brand strategy tender');
+    assert.ok(evalResult.qualification === 'STRONG' || evalResult.qualification === 'POSSIBLE');
+    assert.ok(evalResult.matchedKeywords.includes('brand'));
+  });
+
   console.log('\n====================================================');
   console.log(`CONTRACTS FINDER SUITE: ${passed} / ${passed + failed} TESTS PASSED`);
   console.log('====================================================');

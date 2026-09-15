@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { FindATenderConnector, formatOfficialNoticeUrl } from '@/modules/public-tenders/connectors/find-a-tender';
 import { ContractsFinderConnector, formatContractsFinderNoticeUrl } from '@/modules/public-tenders/connectors/contracts-finder';
+import { VerificationGrade } from '@/modules/public-tenders/connectors/types';
 import { TenderClassifier } from '@/modules/public-tenders/services/tender-classifier';
 import { DeterministicFilter } from '@/modules/public-tenders/services/deterministic-filter';
 import { UrlVerifier } from '@/modules/public-tenders/services/url-verifier';
@@ -219,24 +220,34 @@ export async function POST(req: Request) {
         const archivedReason = isExpired ? 'EXPIRED' : (isRejected ? 'AI_REJECTED' : null);
 
         // 6. Live URL verification with strict Grade A criteria (only probe active actionable candidates)
-        const verification = (isExpired || isRejected)
-          ? {
-              grade: 'A' as const,
-              isValid: true,
-              notes: isExpired ? 'Expired notice' : 'Candidate classified as rejected',
-              httpStatus: 200,
-              finalRedirectUrl: cleanOfficialUrl,
-            }
-          : await UrlVerifier.verifyNoticeUrl(cleanOfficialUrl, {
-              expectedNoticeId: candidate.noticeId,
-              expectedOcid: candidate.ocid,
-              expectedTitle: candidate.title,
-              expectedBuyer: candidate.buyerName,
-              expectedDeadline: candidate.submissionDeadline,
-            });
+        let verification: {
+          grade: VerificationGrade;
+          isValid: boolean;
+          httpStatus?: number | null;
+          finalRedirectUrl?: string | null;
+          notes: string;
+        };
 
-        if (verification.grade === 'X' || !verification.isValid) {
-          urlVerificationFailures++;
+        if (isExpired || isRejected) {
+          verification = {
+            grade: 'X',
+            isValid: false,
+            httpStatus: null,
+            finalRedirectUrl: null,
+            notes: 'URL verification not performed because record was excluded before verification.',
+          };
+        } else {
+          verification = await UrlVerifier.verifyNoticeUrl(cleanOfficialUrl, {
+            expectedNoticeId: candidate.noticeId,
+            expectedOcid: candidate.ocid,
+            expectedTitle: candidate.title,
+            expectedBuyer: candidate.buyerName,
+            expectedDeadline: candidate.submissionDeadline,
+          });
+
+          if (verification.grade === 'X' || !verification.isValid) {
+            urlVerificationFailures++;
+          }
         }
 
         // 7. Check existing canonical tender for deduplication (by OCID first, then notice ID)

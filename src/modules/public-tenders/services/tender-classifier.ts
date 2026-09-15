@@ -165,8 +165,9 @@ Before deciding relevance, determine the substantive primary procurement purpose
 - "DIGITAL_DESIGN": Website design, UX/UI design, information design, digital interactive experiences.
 - "CONSULTANCY_WITH_CREATIVE_OVERLAP": Broad business advisory frameworks (e.g. Glasgow Business Growth Programme) where specific lots include sales, digital marketing, and branding. (Classify as POSSIBLE / WATCH; clearly distinguish as consultancy/business-support delivery, not primary creative production).
 - "PHYSICAL_FABRICATION": Physical exhibition fitout/build, joinery, display build and installation, signage manufacturing, where artwork/graphics are supplied by client or incidental (e.g. RBGE exhibition fitout). MUST BE CLASSIFIED AS REJECT.
-- "CONSTRUCTION": Property maintenance, housing repairs, builder works, plumbing, heating, joinery, electrical, roofing, civils, groundworks (e.g. Highland Council). MUST BE CLASSIFIED AS REJECT.
-- "IT_HARDWARE": Computer hardware, servers, network cabling, infrastructure, software licensing. MUST BE CLASSIFIED AS REJECT.
+- "CONSTRUCTION": Hospital ward refurbishment, building refurbishment, property maintenance, housing repairs, builder works, plumbing, heating, joinery, electrical, roofing, civils, groundworks (e.g. Highland Council, PAHT). MUST BE CLASSIFIED AS REJECT.
+- "IT_HARDWARE": Video walls, control room displays, display screens, AV equipment, audio-visual hardware, computer hardware, servers, network cabling, infrastructure, software licensing. MUST BE CLASSIFIED AS REJECT.
+- "CLINICAL_MEDICAL": Medical imaging, endoscopy, clinical video hardware, patient monitors, diagnostic equipment. MUST BE CLASSIFIED AS REJECT.
 - "CCTV_SECURITY": Surveillance cameras, security guarding, access control. MUST BE CLASSIFIED AS REJECT.
 - "MEDIA_BUYING": Purchasing advertising space, billboard slots, media planning without creative content (e.g. Robert Gordon University). MUST BE CLASSIFIED AS REJECT.
 - "OTHER": Non-creative goods or services. MUST BE CLASSIFIED AS REJECT.
@@ -174,7 +175,7 @@ Before deciding relevance, determine the substantive primary procurement purpose
 CORE EVALUATION LAW:
 INCIDENTAL CREATIVE TERMS DO NOT OVERRIDE PRIMARY PROCUREMENT PURPOSE.
 Determine relevance from: 1. actual lots, 2. primary deliverables, 3. specification, 4. buyer requirement — NOT isolated keywords.
-If primaryPurpose is CONSTRUCTION, PHYSICAL_FABRICATION, IT_HARDWARE, CCTV_SECURITY, or MEDIA_BUYING, relevance MUST be REJECT.
+If primaryPurpose is CONSTRUCTION, PHYSICAL_FABRICATION, IT_HARDWARE, CLINICAL_MEDICAL, CCTV_SECURITY, or MEDIA_BUYING, relevance MUST be REJECT.
 
 TENDER DETAILS:
 Title: ${input.title || 'Untitled'}
