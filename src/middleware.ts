@@ -84,7 +84,7 @@ export async function middleware(request: NextRequest) {
     if (!isAuthenticated) {
       return NextResponse.json(
         {
-          error: 'Unauthorized: Authentication required for operational APIs.',
+          error: 'Unauthorized',
           code: 'AUTH_REQUIRED',
         },
         { status: 401 }

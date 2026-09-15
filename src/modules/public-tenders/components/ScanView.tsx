@@ -13,6 +13,7 @@ interface ScanViewProps {
 
 export function ScanView({ sources: initialSources, basePath = '', isReviewMode = false }: ScanViewProps) {
   const [sources, setSources] = useState<SourceMeta[]>(initialSources);
+  const [selectedSource, setSelectedSource] = useState<'find_a_tender' | 'contracts_finder'>('contracts_finder');
   const [urlInput, setUrlInput] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<any | null>(null);
@@ -41,14 +42,15 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
       setTimeout(() => setScanResult(null), 3500);
       return;
     }
+    const sourceLabel = selectedSource === 'contracts_finder' ? 'Contracts Finder' : 'Find a Tender';
     setIsScanning(true);
-    setScanResult({ status: 'running', message: `Executing ${scanType.toUpperCase()} scan against Find a Tender API...` });
+    setScanResult({ status: 'running', message: `Executing ${scanType.toUpperCase()} scan against ${sourceLabel} API...` });
 
     try {
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scanType }),
+        body: JSON.stringify({ scanType, sourceId: selectedSource }),
       });
       const data = await res.json();
       setScanResult(data);
@@ -91,7 +93,9 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
     }
   };
 
-  const activeSourcesCount = sources.filter((s) => s.health === 'healthy').length;
+  const ftsSource = sources.find((s) => s.id === 'find_a_tender' || s.id === 'find-a-tender');
+  const cfSource = sources.find((s) => s.id === 'contracts_finder' || s.id === 'contracts-finder');
+  const activeSourcesCount = sources.filter((s) => s.health !== 'not_implemented').length;
   const notImplementedCount = sources.filter((s) => s.health === 'not_implemented').length;
 
   return (
@@ -111,7 +115,7 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
           Scan Management
         </h1>
         <p className="text-xs sm:text-sm text-gallery-muted">
-          Execute genuine Find a Tender procurement discovery, inspect connector health, and verify live notice URLs.
+          Execute genuine Find a Tender and Contracts Finder procurement discovery, inspect connector health, and verify live notice URLs.
         </p>
       </header>
 
@@ -130,12 +134,16 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
               </span>
             ) : (
               <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-800 text-[10px] font-bold border border-rose-200">
-                NOT CONFIGURED
+                {healthData?.database?.engine === 'none' ? 'OFFLINE' : 'NOT CONFIGURED'}
               </span>
             )}
           </div>
           <div className="text-sm font-bold text-gallery-charcoal">
-            {healthData?.database?.type === 'postgres' ? 'Supabase / PostgreSQL' : healthData?.database?.healthy ? 'Persistent SQLite' : 'Database Offline'}
+            {healthData?.database?.engine === 'postgres'
+              ? 'Supabase / PostgreSQL'
+              : healthData?.database?.engine === 'sqlite'
+                ? 'Persistent SQLite'
+                : 'Database Offline'}
           </div>
           <p className="text-[11px] text-gallery-muted font-mono">
             {healthData?.database?.totalTenders ?? 0} saved tenders in repository
@@ -175,11 +183,15 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
               <span>CONNECTOR HEALTH</span>
             </div>
             <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-              {activeSourcesCount} / {sources.length} Active
+              {activeSourcesCount} / {sources.length || 7} Active
             </span>
           </div>
           <div className="text-sm font-bold text-gallery-charcoal">
-            Find a Tender — Healthy
+            {ftsSource?.health === 'healthy' && cfSource?.health === 'healthy'
+              ? 'Find a Tender & Contracts Finder — Healthy'
+              : (activeSourcesCount >= 2
+                  ? `${ftsSource?.name || 'Find a Tender'} & ${cfSource?.name || 'Contracts Finder'} — Active`
+                  : `${ftsSource?.name || 'Find a Tender'} — Healthy`)}
           </div>
           <p className="text-[11px] text-gallery-muted font-mono">
             {notImplementedCount} connectors Not Implemented
@@ -189,11 +201,40 @@ export function ScanView({ sources: initialSources, basePath = '', isReviewMode 
 
       {/* Manual Scan Controls */}
       <section className="p-6 bg-gallery-surface border border-gallery-border rounded-lg space-y-4 shadow-2xs">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-gallery-charcoal font-mono">
-            Execute Procurement Scan
-          </h2>
-          <span className="text-[11px] font-mono text-gallery-muted">Source: Find a Tender (FTS) OCDS API</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gallery-border pb-4">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gallery-charcoal font-mono">
+              Execute Procurement Scan
+            </h2>
+            <span className="text-[11px] font-mono text-gallery-muted">
+              Target Source: {selectedSource === 'contracts_finder' ? 'Contracts Finder OCDS API' : 'Find a Tender (FTS) OCDS API'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 p-1 bg-gallery-canvas border border-gallery-border rounded-lg text-xs font-mono">
+            <button
+              type="button"
+              onClick={() => setSelectedSource('contracts_finder')}
+              className={`px-3 py-1 rounded transition-colors ${
+                selectedSource === 'contracts_finder'
+                  ? 'bg-gallery-charcoal text-white font-bold'
+                  : 'text-gallery-muted hover:text-gallery-charcoal'
+              }`}
+            >
+              Contracts Finder
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSource('find_a_tender')}
+              className={`px-3 py-1 rounded transition-colors ${
+                selectedSource === 'find_a_tender'
+                  ? 'bg-gallery-charcoal text-white font-bold'
+                  : 'text-gallery-muted hover:text-gallery-charcoal'
+              }`}
+            >
+              Find a Tender
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

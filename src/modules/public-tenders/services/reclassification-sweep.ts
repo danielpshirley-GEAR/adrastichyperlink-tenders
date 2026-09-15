@@ -375,7 +375,10 @@ export class ReclassificationSweep {
             lifecycleStatus: 'ACTIVE',
             isArchived: false,
             officialNoticeUrl: cleanOfficialUrl,
-            plainEnglishSummary: `AI REVIEW INCOMPLETE (${category}). Retained via deterministic filter for manual review with recommendation REVIEW.`,
+            plainEnglishSummary:
+              tender.plainEnglishSummary && !tender.plainEnglishSummary.includes('AI REVIEW INCOMPLETE') && !tender.plainEnglishSummary.includes('{"error"')
+                ? tender.plainEnglishSummary
+                : (tender.description?.slice(0, 300) || 'Buyer procurement opportunity retained for manual review.'),
             serviceTags: tender.serviceTags,
           } as any);
 
@@ -395,7 +398,7 @@ export class ReclassificationSweep {
             recommendation: 'REVIEW',
             aiReviewStatus: 'REQUIRED',
             changed: true,
-            reason: `AI REVIEW INCOMPLETE (${category}). Preserved as POSSIBLE with recommendation REVIEW.`,
+            reason: 'AI review unavailable. Preserved based on verified buyer scope.',
             geminiRetried: true,
             geminiRetrySuccess: false,
             failureReason: geminiFailureReason,

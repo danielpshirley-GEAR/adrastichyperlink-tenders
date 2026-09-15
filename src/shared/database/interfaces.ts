@@ -7,6 +7,7 @@ export interface ITendersRepository {
   getById(id: string): Promise<TenderSummary | null>;
   getByCanonicalReference(ref: string): Promise<TenderSummary | null>;
   getByOcid(ocid: string): Promise<TenderSummary | null>;
+  findResilient(identifier: string): Promise<TenderSummary | null>;
   save(tender: Partial<TenderSummary> & { canonicalReference: string; title?: string | null; buyerName?: string | null }): Promise<TenderSummary>;
   setBidDecision(id: string, decision: BidDecisionType, reasoning?: string): Promise<boolean>;
   countByTab(): Promise<Record<string, number>>;

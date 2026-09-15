@@ -13,3 +13,9 @@ out
 scratch_test.png
 .DS_Store
 *.tsbuildinfo
+
+# Local Netlify folder
+.netlify
+
+bin/
+

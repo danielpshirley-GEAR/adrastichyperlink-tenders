@@ -1,6 +1,7 @@
 // src/modules/public-tenders/connectors/registry.ts
 import { ProcurementConnector } from './types';
 import { FindATenderConnector } from './find-a-tender';
+import { ContractsFinderConnector } from './contracts-finder';
 import { getSourcesRepository } from '@/shared/database/db';
 import { SourceHealthStatus } from '@/shared/database/repositories/sources';
 
@@ -21,8 +22,8 @@ export class SourceRegistry {
   private connectors: Map<string, ProcurementConnector> = new Map();
 
   private constructor() {
-    // In Phase 2, Find a Tender is the ONLY implemented connector.
     this.register(new FindATenderConnector());
+    this.register(new ContractsFinderConnector());
   }
 
   public static getInstance(): SourceRegistry {
@@ -45,32 +46,12 @@ export class SourceRegistry {
   }
 
   public async getSourcesMeta(): Promise<SourceMeta[]> {
-    try {
-      const sourcesRepo = getSourcesRepository();
-      const records = await sourcesRepo.getAll();
-      if (records.length > 0) {
-        return records.map((r) => ({
-          id: r.id,
-          name: r.name,
-          baseUrl: r.baseUrl,
-          portalType: r.portalType,
-          health: r.healthStatus,
-          lastScanAt: r.lastSuccessfulScanAt,
-          noticesChecked: r.totalNoticesScanned,
-          relevantFound: r.totalRelevantFound,
-          scanFrequency: r.scanFrequency,
-        }));
-      }
-    } catch {
-      // fallback
-    }
-
-    return [
+    const canonicalSources: SourceMeta[] = [
       {
         id: 'find_a_tender',
         name: 'Find a Tender (FTS)',
         baseUrl: 'https://www.find-tender.service.gov.uk',
-        portalType: 'primary_ocds',
+        portalType: 'High-value UK public sector (>£138k/£140k)',
         health: 'untested',
         lastScanAt: null,
         noticesChecked: 0,
@@ -81,8 +62,8 @@ export class SourceRegistry {
         id: 'contracts_finder',
         name: 'Contracts Finder',
         baseUrl: 'https://www.contractsfinder.service.gov.uk',
-        portalType: 'low_value',
-        health: 'not_implemented',
+        portalType: 'England & non-devolved (>£12k central, >£30k local)',
+        health: 'untested',
         lastScanAt: null,
         noticesChecked: 0,
         relevantFound: 0,
@@ -92,7 +73,7 @@ export class SourceRegistry {
         id: 'public_contracts_scotland',
         name: 'Public Contracts Scotland (PCS)',
         baseUrl: 'https://www.publiccontractsscotland.gov.uk',
-        portalType: 'devolved_scotland',
+        portalType: 'Scottish public procurement',
         health: 'not_implemented',
         lastScanAt: null,
         noticesChecked: 0,
@@ -103,7 +84,7 @@ export class SourceRegistry {
         id: 'sell2wales',
         name: 'Sell2Wales',
         baseUrl: 'https://www.sell2wales.gov.wales',
-        portalType: 'devolved_wales',
+        portalType: 'Welsh public procurement',
         health: 'not_implemented',
         lastScanAt: null,
         noticesChecked: 0,
@@ -114,7 +95,18 @@ export class SourceRegistry {
         id: 'nhs_atamis',
         name: 'Health Family e-Procurement (Atamis)',
         baseUrl: 'https://health-family.force.com/s/Welcome',
-        portalType: 'healthcare',
+        portalType: 'Healthcare & NHS commercial opportunities',
+        health: 'not_implemented',
+        lastScanAt: null,
+        noticesChecked: 0,
+        relevantFound: 0,
+        scanFrequency: 'Daily 08:00',
+      },
+      {
+        id: 'mod_dsp',
+        name: 'MOD Defence Sourcing Portal (DSP)',
+        baseUrl: 'https://www.contracts.mod.uk',
+        portalType: 'Defence & security procurement',
         health: 'not_implemented',
         lastScanAt: null,
         noticesChecked: 0,
@@ -125,24 +117,47 @@ export class SourceRegistry {
         id: 'etenders_ni',
         name: 'eTendersNI',
         baseUrl: 'https://etendersni.gov.uk',
-        portalType: 'devolved_ni',
+        portalType: 'Northern Ireland public sector',
         health: 'not_implemented',
         lastScanAt: null,
         noticesChecked: 0,
         relevantFound: 0,
         scanFrequency: 'Daily 07:00',
       },
-      {
-        id: 'mod_dsp',
-        name: 'MOD Defence Sourcing Portal (DSP)',
-        baseUrl: 'https://www.contracts.mod.uk',
-        portalType: 'defence',
-        health: 'not_implemented',
-        lastScanAt: null,
-        noticesChecked: 0,
-        relevantFound: 0,
-        scanFrequency: 'Daily 08:00',
-      },
     ];
+
+    try {
+      const sourcesRepo = getSourcesRepository();
+      const records = await sourcesRepo.getAll();
+      if (records && records.length > 0) {
+        const recordMap = new Map(records.map((r) => [r.id, r]));
+        return canonicalSources.map((cs) => {
+          const matched = recordMap.get(cs.id) || recordMap.get(cs.id.replace(/_/g, '-'));
+          const isImplemented = this.connectors.has(cs.id);
+          let health = (matched?.healthStatus as SourceHealthStatus) || cs.health;
+          if (isImplemented && health === 'not_implemented') {
+            health = 'untested';
+          }
+          if (matched) {
+            return {
+              id: cs.id,
+              name: matched.name || cs.name,
+              baseUrl: matched.baseUrl || cs.baseUrl,
+              portalType: cs.portalType || matched.portalType,
+              health,
+              lastScanAt: matched.lastSuccessfulScanAt,
+              noticesChecked: matched.totalNoticesScanned ?? 0,
+              relevantFound: matched.totalRelevantFound ?? 0,
+              scanFrequency: matched.scanFrequency || cs.scanFrequency,
+            };
+          }
+          return { ...cs, health };
+        });
+      }
+    } catch {
+      // fallback
+    }
+
+    return canonicalSources;
   }
 }

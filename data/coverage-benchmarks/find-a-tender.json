@@ -1,0 +1,172 @@
+[
+  {
+    "id": "bench-fts-01",
+    "title": "Marketing Design & Creative Services Framework at Imperial War Museums (IWM)",
+    "canonicalReference": "IWM-MKT-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["marketing design", "creative services", "graphic design"],
+    "notes": "Imperial War Museums framework for creative marketing and exhibition design."
+  },
+  {
+    "id": "bench-fts-02",
+    "title": "Creative and Content Framework (LSHW.005.2026)",
+    "canonicalReference": "LSHW.005.2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["creative", "content", "creative agency"],
+    "notes": "NHS London shared services creative and digital content framework."
+  },
+  {
+    "id": "bench-fts-03",
+    "title": "Provision of a framework for Graphic Design, Videography Services & Campaign Development",
+    "canonicalReference": "FTS-GD-VID-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["graphic design", "videography", "campaign development"],
+    "notes": "Multi-lot regional creative production framework."
+  },
+  {
+    "id": "bench-fts-04",
+    "title": "Annual Report and Accounts - Creative and Design Agency",
+    "canonicalReference": "ARA-DES-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["annual report", "design agency", "information design"],
+    "notes": "Corporate publication and investor presentation design."
+  },
+  {
+    "id": "bench-fts-05",
+    "title": "DN Colleges Group - ITT for the Provision of Brand Strategy and Rebranding Services",
+    "canonicalReference": "DNCG-BRAND-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["brand strategy", "rebranding", "visual identity"],
+    "notes": "Higher education comprehensive rebranding and identity rollout."
+  },
+  {
+    "id": "bench-fts-06",
+    "title": "Framework Agreement for the Provision of Marketing and Communications Services",
+    "canonicalReference": "MKT-COMMS-FW-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["marketing", "communications", "campaign creative"],
+    "notes": "Local government wide creative communications call-off."
+  },
+  {
+    "id": "bench-fts-07",
+    "title": "Research and Creative Development and Delivery for Behaviour Change Stop Smoking Campaign in Greater Manchester",
+    "canonicalReference": "GM-SMOKE-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["behaviour change", "creative development", "campaign"],
+    "notes": "Public health behaviour change creative and film commission."
+  },
+  {
+    "id": "bench-fts-08",
+    "title": "UHB Managed Digital Content Service",
+    "canonicalReference": "UHB-CONTENT-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["digital content", "content production", "video production"],
+    "notes": "Hospital trust ongoing video and patient-facing digital content."
+  },
+  {
+    "id": "bench-fts-09",
+    "title": "Behaviour Change Agency",
+    "canonicalReference": "BCA-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["behaviour change", "creative agency", "campaign"],
+    "notes": "Strategic creative behaviour change communications partner."
+  },
+  {
+    "id": "bench-fts-10",
+    "title": "Social-First Creative Agency",
+    "canonicalReference": "SFCA-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["social-first", "creative agency", "content creation"],
+    "notes": "Social media video and interactive content production."
+  },
+  {
+    "id": "bench-fts-11",
+    "title": "Marketing & Communications - Dynamic Market Intention",
+    "canonicalReference": "MKT-DMI-2026",
+    "source": "find_a_tender",
+    "stage": "PRELIMINARY MARKET ENGAGEMENT",
+    "expectedQualification": "POSSIBLE",
+    "primaryKeywords": ["marketing", "communications", "dynamic market"],
+    "notes": "Early market engagement for dynamic purchasing system."
+  },
+  {
+    "id": "bench-fts-12",
+    "title": "UK_252-2024 - Creative Design Services Framework",
+    "canonicalReference": "UK_252-2024",
+    "source": "find_a_tender",
+    "stage": "FRAMEWORK",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["creative design", "design services", "graphic design"],
+    "notes": "Central government design roster."
+  },
+  {
+    "id": "bench-fts-13",
+    "title": "ROG First Light Exhibitions Digital Media",
+    "canonicalReference": "ROG-MEDIA-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["digital media", "exhibition media", "projection mapping"],
+    "notes": "Museum gallery immersive digital media and animated projection."
+  },
+  {
+    "id": "bench-fts-14",
+    "title": "Animation Framework (LSHW.001.2026)",
+    "canonicalReference": "LSHW.001.2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["animation", "2d animation", "motion design"],
+    "notes": "Healthcare public information 2D/3D animation framework."
+  },
+  {
+    "id": "bench-fts-15",
+    "title": "Videography, Animation and Graphic Design Services Framework",
+    "canonicalReference": "VID-ANIM-GD-2026",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["videography", "animation", "graphic design"],
+    "notes": "Multi-disciplinary content creation framework."
+  },
+  {
+    "id": "bench-fts-16",
+    "title": "PEACEPLUS CRT Animation Projects",
+    "canonicalReference": "PEACEPLUS-CRT-ANIM",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["animation", "animated", "video production"],
+    "notes": "Peaceplus community cross-border animated educational films."
+  },
+  {
+    "id": "bench-fts-17",
+    "title": "GSS25200 - series of films and animations",
+    "canonicalReference": "GSS25200",
+    "source": "find_a_tender",
+    "stage": "OPEN TENDER",
+    "expectedQualification": "STRONG",
+    "primaryKeywords": ["films and animations", "video production", "motion design"],
+    "notes": "Government statistical service explainer animations and public films."
+  }
+]

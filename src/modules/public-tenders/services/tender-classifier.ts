@@ -165,8 +165,9 @@ Before deciding relevance, determine the substantive primary procurement purpose
 - "DIGITAL_DESIGN": Website design, UX/UI design, information design, digital interactive experiences.
 - "CONSULTANCY_WITH_CREATIVE_OVERLAP": Broad business advisory frameworks (e.g. Glasgow Business Growth Programme) where specific lots include sales, digital marketing, and branding. (Classify as POSSIBLE / WATCH; clearly distinguish as consultancy/business-support delivery, not primary creative production).
 - "PHYSICAL_FABRICATION": Physical exhibition fitout/build, joinery, display build and installation, signage manufacturing, where artwork/graphics are supplied by client or incidental (e.g. RBGE exhibition fitout). MUST BE CLASSIFIED AS REJECT.
-- "CONSTRUCTION": Property maintenance, housing repairs, builder works, plumbing, heating, joinery, electrical, roofing, civils, groundworks (e.g. Highland Council). MUST BE CLASSIFIED AS REJECT.
-- "IT_HARDWARE": Computer hardware, servers, network cabling, infrastructure, software licensing. MUST BE CLASSIFIED AS REJECT.
+- "CONSTRUCTION": Hospital ward refurbishment, building refurbishment, property maintenance, housing repairs, builder works, plumbing, heating, joinery, electrical, roofing, civils, groundworks (e.g. Highland Council, PAHT). MUST BE CLASSIFIED AS REJECT.
+- "IT_HARDWARE": Video walls, control room displays, display screens, AV equipment, audio-visual hardware, computer hardware, servers, network cabling, infrastructure, software licensing. MUST BE CLASSIFIED AS REJECT.
+- "CLINICAL_MEDICAL": Medical imaging, endoscopy, clinical video hardware, patient monitors, diagnostic equipment. MUST BE CLASSIFIED AS REJECT.
 - "CCTV_SECURITY": Surveillance cameras, security guarding, access control. MUST BE CLASSIFIED AS REJECT.
 - "MEDIA_BUYING": Purchasing advertising space, billboard slots, media planning without creative content (e.g. Robert Gordon University). MUST BE CLASSIFIED AS REJECT.
 - "OTHER": Non-creative goods or services. MUST BE CLASSIFIED AS REJECT.
@@ -174,7 +175,7 @@ Before deciding relevance, determine the substantive primary procurement purpose
 CORE EVALUATION LAW:
 INCIDENTAL CREATIVE TERMS DO NOT OVERRIDE PRIMARY PROCUREMENT PURPOSE.
 Determine relevance from: 1. actual lots, 2. primary deliverables, 3. specification, 4. buyer requirement — NOT isolated keywords.
-If primaryPurpose is CONSTRUCTION, PHYSICAL_FABRICATION, IT_HARDWARE, CCTV_SECURITY, or MEDIA_BUYING, relevance MUST be REJECT.
+If primaryPurpose is CONSTRUCTION, PHYSICAL_FABRICATION, IT_HARDWARE, CLINICAL_MEDICAL, CCTV_SECURITY, or MEDIA_BUYING, relevance MUST be REJECT.
 
 TENDER DETAILS:
 Title: ${input.title || 'Untitled'}
@@ -272,28 +273,36 @@ Respond strictly in valid JSON matching this schema:
             ai: {
               status: 'RUN',
               aiReviewStatus: 'COMPLETED',
-              relevance: data.relevance,
-              primaryPurpose,
-              serviceMatches: data.serviceMatches,
+              relevance: finalRelevance,
+              primaryPurpose: data.analysis?.primaryPurpose,
+              serviceMatches: data.serviceMatches || [],
               reason: data.reason,
+              analysis: data.analysis,
               confidence: data.confidence,
               model: GeminiClient.getModelForTier(1),
-              analysis: data.analysis,
             },
             final: {
               relevance: finalRelevance,
-              primaryPurpose,
-              reason: reasonFinalQualificationWasChosen,
-              serviceMatches: data.serviceMatches,
-              recommendation: data.analysis?.recommendation as any,
+              primaryPurpose: data.analysis?.primaryPurpose,
+              serviceMatches: data.serviceMatches || deterministic.matchedKeywords,
+              reason: data.reason,
               analysis: data.analysis,
               reasonFinalQualificationWasChosen,
             },
           };
         } else {
-          // Gemini failed after bounded retries
+          // Gemini failed after bounded retries — clean human-facing degradation without raw JSON dumps
           const errorCategory = callResult.errorCategory || 'UNKNOWN';
           const errorMessage = callResult.errorMessage || 'Gemini returned empty response';
+          console.warn(`[TenderClassifier] Gemini degradation [${errorCategory}]: ${errorMessage}`);
+
+          let cleanSummary = 'AI review unavailable. Retained via deterministic filter for manual review.';
+          if (errorMessage.includes('API_KEY_INVALID') || errorMessage.includes('API key not valid')) {
+            cleanSummary = 'AI review unavailable (Invalid Gemini configuration). Retained based on buyer scope.';
+          } else if (errorCategory === 'RATE_LIMIT') {
+            cleanSummary = 'AI review unavailable (Gemini quota limit). Retained based on buyer scope.';
+          }
+
           return {
             deterministic: deterministicResult,
             ai: {
@@ -301,20 +310,21 @@ Respond strictly in valid JSON matching this schema:
               aiReviewStatus: 'REQUIRED',
               failureCategory: errorCategory,
               serviceMatches: [],
-              reason: `[${errorCategory}] ${errorMessage}`,
+              reason: cleanSummary,
               model: GeminiClient.getModelForTier(1),
             },
             final: {
-              relevance: 'POSSIBLE', // preserve deterministic candidate for safety
-              reason: `AI REVIEW INCOMPLETE (${errorCategory}): ${errorMessage}. Retained via deterministic filter for manual review.`,
+              relevance: 'POSSIBLE',
+              reason: cleanSummary,
               serviceMatches: deterministic.matchedKeywords,
-              recommendation: 'REVIEW', // NOT an AI-derived recommendation
-              reasonFinalQualificationWasChosen: `AI REVIEW INCOMPLETE [${errorCategory}]: ${errorMessage}. Unverified candidate retained as POSSIBLE with recommendation REVIEW.`,
+              recommendation: 'REVIEW',
+              reasonFinalQualificationWasChosen: cleanSummary,
             },
           };
         }
       } catch (err: any) {
         console.error('TenderClassifier Gemini error:', err.message);
+        const cleanSummary = 'AI review unavailable. Retained via deterministic filter for manual review.';
         return {
           deterministic: deterministicResult,
           ai: {
@@ -322,15 +332,15 @@ Respond strictly in valid JSON matching this schema:
             aiReviewStatus: 'REQUIRED',
             failureCategory: 'UNKNOWN',
             serviceMatches: [],
-            reason: `Gemini execution error: ${err.message}`,
+            reason: cleanSummary,
             model: GeminiClient.getModelForTier(1),
           },
           final: {
             relevance: deterministic.qualification,
-            reason: `AI REVIEW INCOMPLETE: ${err.message}. Retained via deterministic filter for manual review.`,
+            reason: cleanSummary,
             serviceMatches: deterministic.matchedKeywords,
             recommendation: 'REVIEW',
-            reasonFinalQualificationWasChosen: `AI REVIEW INCOMPLETE [UNKNOWN]: ${err.message}. Unverified candidate retained as POSSIBLE with recommendation REVIEW.`,
+            reasonFinalQualificationWasChosen: cleanSummary,
           },
         };
       }

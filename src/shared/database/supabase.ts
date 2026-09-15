@@ -126,6 +126,83 @@ export class SupabaseTendersRepository implements ITendersRepository {
     return this.mapRow(data);
   }
 
+  async findResilient(identifier: string): Promise<TenderSummary | null> {
+    if (!identifier || typeof identifier !== 'string') return null;
+    const cleanId = decodeURIComponent(identifier).trim();
+    if (!cleanId) return null;
+
+    // 1. Direct database UUID lookup
+    try {
+      const byId = await this.getById(cleanId);
+      if (byId) return byId;
+    } catch {
+      // Ignore syntax error if not UUID format
+    }
+
+    // 2. Canonical reference or latestNoticeId lookup
+    try {
+      const byRef = await this.getByCanonicalReference(cleanId);
+      if (byRef) return byRef;
+    } catch {
+      // Ignore
+    }
+
+    // 3. Direct OCID lookup
+    try {
+      const byOcid = await this.getByOcid(cleanId);
+      if (byOcid) return byOcid;
+    } catch {
+      // Ignore
+    }
+
+    // 4. Map stale UUID or notice reference via source_notices table
+    try {
+      const { data: noticeRows } = await this.client
+        .from('source_notices')
+        .select('tender_id, notice_id, ocid')
+        .or(`tender_id.eq.${cleanId},notice_id.eq.${cleanId},ocid.eq.${cleanId},id.eq.${cleanId}`)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (noticeRows && noticeRows.length > 0) {
+        for (const row of noticeRows) {
+          if (row.tender_id && row.tender_id !== cleanId) {
+            const mapped = await this.getById(row.tender_id);
+            if (mapped) return mapped;
+          }
+          if (row.ocid) {
+            const mapped = await this.getByOcid(row.ocid);
+            if (mapped) return mapped;
+          }
+          if (row.notice_id) {
+            const mapped = await this.getByCanonicalReference(row.notice_id);
+            if (mapped) return mapped;
+          }
+        }
+      }
+    } catch {
+      // Ignore source_notices probe error
+    }
+
+    // 5. Map stale UUID via source_links table
+    try {
+      const { data: linkRows } = await this.client
+        .from('source_links')
+        .select('tender_id')
+        .eq('tender_id', cleanId)
+        .limit(1);
+
+      if (linkRows && linkRows.length > 0 && linkRows[0].tender_id) {
+        const mapped = await this.getById(linkRows[0].tender_id);
+        if (mapped) return mapped;
+      }
+    } catch {
+      // Ignore
+    }
+
+    return null;
+  }
+
   async save(
     tender: Partial<TenderSummary> & {
       canonicalReference: string;
@@ -137,11 +214,24 @@ export class SupabaseTendersRepository implements ITendersRepository {
   ): Promise<TenderSummary> {
     // Deduplicate: prioritize OCID, then canonicalReference
     let existing: TenderSummary | null = null;
-    if (tender.ocid) {
-      existing = await this.getByOcid(tender.ocid);
-    }
-    if (!existing) {
+    let identityConflict = false;
+    let identityConflictDetails: string | undefined = undefined;
+
+    if (tender.canonicalReference) {
       existing = await this.getByCanonicalReference(tender.canonicalReference);
+    }
+
+    if (tender.ocid) {
+      const existingByOcid = await this.getByOcid(tender.ocid);
+      if (existing && existingByOcid && existing.id !== existingByOcid.id) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Canonical reference '${tender.canonicalReference}' belongs to record ${existing.id}, but OCID '${tender.ocid}' belongs to distinct record ${existingByOcid.id}`;
+      } else if (existing && existing.ocid && existing.ocid !== tender.ocid) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Existing record for '${tender.canonicalReference}' has canonical OCID '${existing.ocid}', which conflicts with provided '${tender.ocid}'`;
+      } else if (!existing && existingByOcid) {
+        existing = existingByOcid;
+      }
     }
 
     const now = new Date().toISOString();
@@ -187,16 +277,19 @@ export class SupabaseTendersRepository implements ITendersRepository {
     const buyerId = tender.buyerId || (existing as any)?.buyerId || null;
 
     const rawUrl = tender.officialNoticeUrl || existing?.officialNoticeUrl || '';
-    const cleanNoticeId = (latestNoticeId || canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
-    const officialNoticeUrl = cleanNoticeId
-      ? `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`
-      : rawUrl.replace(/svg.*$/i, '').trim();
+    let officialNoticeUrl = rawUrl.replace(/svg.*$/i, '').trim();
+    if (!rawUrl.includes('contractsfinder.service.gov.uk')) {
+      const cleanNoticeId = (latestNoticeId || canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
+      if (cleanNoticeId) {
+        officialNoticeUrl = `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`;
+      }
+    }
 
     const payload: any = {
       id,
       canonical_reference: canonicalReference,
       latest_notice_id: latestNoticeId,
-      ocid: tender.ocid || existing?.ocid || null,
+      ocid: identityConflict ? (existing?.ocid || null) : (tender.ocid || existing?.ocid || null),
       title: tender.title !== undefined ? tender.title : (existing?.title ?? null),
       plain_english_summary: tender.plainEnglishSummary ?? existing?.plainEnglishSummary ?? null,
       buyer_id: buyerId,
@@ -219,6 +312,11 @@ export class SupabaseTendersRepository implements ITendersRepository {
       is_archived: isArchived,
       archived_reason: isArchived ? (archivedReason || 'AI_REJECTED') : null,
       bid_decision_state: tender.bidDecisionState || existing?.bidDecisionState || 'UNDECIDED',
+      evaluation_criteria: (tender as any).enrichment
+        ? { criteria: tender.evaluationCriteria || [], enrichment: (tender as any).enrichment }
+        : (tender.evaluationCriteria || (existing as any)?.evaluationCriteria || []),
+      requirements: (tender as any).requirements || (existing as any)?.requirements || [],
+      documents: (tender as any).documents || (existing as any)?.documents || [],
       updated_at: now,
     };
 
@@ -230,8 +328,19 @@ export class SupabaseTendersRepository implements ITendersRepository {
         delete payload.archived_reason;
         res = await this.client.from('tenders').insert(payload).select().single();
       }
+      if (res.error && (res.error.message.includes('evaluation_criteria') || res.error.message.includes('requirements') || res.error.message.includes('documents'))) {
+        delete payload.evaluation_criteria;
+        delete payload.requirements;
+        delete payload.documents;
+        res = await this.client.from('tenders').insert(payload).select().single();
+      }
       if (res.error) throw new Error(`Failed to insert tender: ${res.error.message}`);
-      return this.mapRow(res.data);
+      const mapped = this.mapRow(res.data);
+      if (identityConflict) {
+        mapped.identityConflict = true;
+        mapped.identityConflictDetails = identityConflictDetails;
+      }
+      return mapped;
     } else {
       payload.last_verified_at = now;
       let res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
@@ -239,8 +348,19 @@ export class SupabaseTendersRepository implements ITendersRepository {
         delete payload.archived_reason;
         res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
       }
+      if (res.error && (res.error.message.includes('evaluation_criteria') || res.error.message.includes('requirements') || res.error.message.includes('documents'))) {
+        delete payload.evaluation_criteria;
+        delete payload.requirements;
+        delete payload.documents;
+        res = await this.client.from('tenders').update(payload).eq('id', id).select().single();
+      }
       if (res.error) throw new Error(`Failed to update tender: ${res.error.message}`);
-      return this.mapRow(res.data);
+      const mapped = this.mapRow(res.data);
+      if (identityConflict) {
+        mapped.identityConflict = true;
+        mapped.identityConflictDetails = identityConflictDetails;
+      }
+      return mapped;
     }
   }
 
@@ -305,6 +425,35 @@ export class SupabaseTendersRepository implements ITendersRepository {
       }
     }
 
+    const parseJson = (v: any, fallback: any = []) => {
+      if (!v) return fallback;
+      if (typeof v === 'string') {
+        try { return JSON.parse(v); } catch { return fallback; }
+      }
+      return v;
+    };
+
+    const rawEvaluationCriteria = parseJson(row.evaluation_criteria, []);
+    let evaluationCriteria: any[] = [];
+    let enrichment: any = undefined;
+
+    if (rawEvaluationCriteria && typeof rawEvaluationCriteria === 'object' && !Array.isArray(rawEvaluationCriteria)) {
+      evaluationCriteria = Array.isArray(rawEvaluationCriteria.criteria) ? rawEvaluationCriteria.criteria : [];
+      enrichment = rawEvaluationCriteria.enrichment || undefined;
+    } else if (Array.isArray(rawEvaluationCriteria)) {
+      evaluationCriteria = rawEvaluationCriteria;
+    }
+
+    const requirements = parseJson(row.requirements, []);
+    const documents = parseJson(row.documents, []);
+
+    // Determine procurement stage
+    const procurementStage = enrichment?.procurementStage || (
+      (row.title?.toLowerCase().includes('prior information') || row.plain_english_summary?.toLowerCase().includes('market engagement') || row.plain_english_summary?.toLowerCase().includes('preliminary market'))
+        ? 'PRELIMINARY MARKET ENGAGEMENT'
+        : 'OPEN TENDER'
+    );
+
     return {
       id: row.id,
       canonicalReference: row.canonical_reference,
@@ -334,15 +483,27 @@ export class SupabaseTendersRepository implements ITendersRepository {
       officialNoticeUrl: row.official_notice_url,
       applicationPortalUrl: row.application_portal_url || undefined,
       serviceTags: Array.isArray(row.service_tags) ? row.service_tags : [],
-      sourceId: 'find_a_tender',
+      sourceId: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
+      source: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
       isArchived: Boolean(row.is_archived),
       archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
       discoveredAt: row.discovered_at,
       lastVerifiedAt: row.last_verified_at,
       bidDecisionState: row.bid_decision_state || 'UNDECIDED',
-      evaluationCriteria: [],
-      requirements: [],
-      documents: [],
+      procurementStage,
+      description: row.plain_english_summary || '',
+      evaluationCriteria,
+      requirements,
+      documents,
+      enrichment,
+      completeness: enrichment?.completeness || undefined,
+      criticalFlags: enrichment?.criticalFlags || undefined,
+      keyDeliverables: enrichment?.scopeAndSpec?.buyerKeyDeliverables || enrichment?.scopeAndSpec?.keyDeliverables || undefined,
+      cpvCodes: enrichment?.cpvCodes || (enrichment?.factModel?.procurement?.cpvCodes?.value) || [],
+      smeSuitable: enrichment?.smeSuitable ?? (enrichment?.factModel?.procurement?.smeSuitable?.value ?? null),
+      vcseSuitable: enrichment?.vcseSuitable ?? (enrichment?.factModel?.procurement?.vcseSuitable?.value ?? null),
+      deliveryLocations: enrichment?.deliveryLocations || (enrichment?.factModel?.buyer?.region?.value ? [enrichment.factModel.buyer.region.value] : []),
+      sourceName: enrichment?.sourceName || (row.source_id === 'contracts_finder' ? 'Contracts Finder' : 'Find a Tender'),
     };
   }
 }
@@ -439,6 +600,14 @@ export class SupabaseSourcesRepository implements ISourcesRepository {
       }
     } else if (stats?.lastScanError !== undefined) {
       updatePayload.last_scan_error = stats.lastScanError;
+    }
+
+    if (stats?.noticesScannedDelta || stats?.relevantFoundDelta) {
+      const current = await this.getById(id);
+      if (current) {
+        updatePayload.total_notices_scanned = (current.totalNoticesScanned || 0) + (stats.noticesScannedDelta || 0);
+        updatePayload.total_relevant_found = (current.totalRelevantFound || 0) + (stats.relevantFoundDelta || 0);
+      }
     }
 
     const { error } = await this.client.from('sources').update(updatePayload).eq('id', id);

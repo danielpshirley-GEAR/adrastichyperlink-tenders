@@ -2,7 +2,7 @@
 
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Lock, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Lock, ArrowRight, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
 function LoginForm() {
   const router = useRouter();
@@ -10,6 +10,7 @@ function LoginForm() {
   const redirectUrl = searchParams.get('redirect') || '/today';
 
   const [token, setToken] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +36,7 @@ function LoginForm() {
       router.push(redirectUrl);
       router.refresh();
     } catch (err: any) {
-      setError(err.message || 'Invalid administrator token');
+      setError(err.message || 'Invalid access token');
     } finally {
       setLoading(false);
     }
@@ -47,17 +48,26 @@ function LoginForm() {
         <label htmlFor="token" className="block text-xs font-mono uppercase tracking-wider text-gallery-muted font-semibold">
           Access Token
         </label>
-        <div className="mt-2">
+        <div className="mt-2 relative">
           <input
             id="token"
             name="token"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             required
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="Enter access token..."
-            className="appearance-none block w-full px-3 py-2.5 border border-gallery-border rounded-lg placeholder-gallery-muted/60 text-gallery-charcoal focus:outline-none focus:ring-2 focus:ring-tender-primary text-sm font-mono"
+            className="appearance-none block w-full pl-3 pr-10 py-2.5 border border-gallery-border rounded-lg placeholder-gallery-muted/60 text-gallery-charcoal focus:outline-none focus:ring-2 focus:ring-tender-primary text-sm font-mono"
           />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gallery-muted hover:text-gallery-charcoal transition-colors"
+            tabIndex={-1}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
         </div>
       </div>
 

@@ -1,19 +1,11 @@
 // src/app/scan/page.tsx
-'use client';
-
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { ScanView } from '@/modules/public-tenders/components/ScanView';
-import { SourceMeta } from '@/modules/public-tenders/connectors/registry';
+import { SourceRegistry } from '@/modules/public-tenders/connectors/registry';
 
-export default function ScanPage() {
-  const [sources, setSources] = useState<SourceMeta[]>([]);
+export const dynamic = 'force-dynamic';
 
-  useEffect(() => {
-    fetch('/api/sources')
-      .then((res) => res.json())
-      .then((data) => setSources(data.sources || []))
-      .catch((err) => console.error(err));
-  }, []);
-
+export default async function ScanPage() {
+  const sources = await SourceRegistry.getInstance().getSourcesMeta();
   return <ScanView sources={sources} basePath="" isReviewMode={false} />;
 }

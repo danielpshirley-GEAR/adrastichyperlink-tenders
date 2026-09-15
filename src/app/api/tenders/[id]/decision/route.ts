@@ -2,8 +2,15 @@
 import { NextResponse } from 'next/server';
 import { getTendersRepository, getApplicationsRepository } from '@/shared/database/db';
 import { BidDecisionType } from '@/modules/public-tenders/types/tender';
+import { requireApiAuth } from '@/shared/auth/require-api-auth';
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  // Direct route-level authorization guard
+  const auth = await requireApiAuth(req);
+  if (!auth.authenticated) {
+    return auth.response;
+  }
+
   try {
     const tendersRepo = getTendersRepository();
     const applicationsRepo = getApplicationsRepository();

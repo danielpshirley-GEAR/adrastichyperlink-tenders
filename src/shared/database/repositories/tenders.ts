@@ -21,6 +21,10 @@ export class SqliteTendersRepository implements ITendersRepository {
     return TendersRepository.getByOcid(ocid);
   }
 
+  async findResilient(identifier: string): Promise<TenderSummary | null> {
+    return TendersRepository.findResilient(identifier);
+  }
+
   async save(tender: Partial<TenderSummary> & { canonicalReference: string; title: string; buyerName: string }): Promise<TenderSummary> {
     return TendersRepository.save(tender);
   }
@@ -104,7 +108,7 @@ export class TendersRepository {
 
   static async getByCanonicalReference(ref: string): Promise<TenderSummary | null> {
     const db = getDb();
-    const row = db.prepare('SELECT * FROM tenders WHERE canonical_reference = ?').get(ref) as any;
+    const row = db.prepare('SELECT * FROM tenders WHERE canonical_reference = ? OR latest_notice_id = ?').get(ref, ref) as any;
     if (!row) return null;
     return mapRowToTender(row);
   }
@@ -114,6 +118,73 @@ export class TendersRepository {
     const row = db.prepare('SELECT * FROM tenders WHERE ocid = ?').get(ocid) as any;
     if (!row) return null;
     return mapRowToTender(row);
+  }
+
+  static async findResilient(identifier: string): Promise<TenderSummary | null> {
+    if (!identifier || typeof identifier !== 'string') return null;
+    const cleanId = decodeURIComponent(identifier).trim();
+    if (!cleanId) return null;
+
+    // 1. Direct database UUID lookup
+    const byId = await this.getById(cleanId);
+    if (byId) return byId;
+
+    // 2. Canonical reference or latestNoticeId lookup
+    const byRef = await this.getByCanonicalReference(cleanId);
+    if (byRef) return byRef;
+
+    // 3. Direct OCID lookup
+    const byOcid = await this.getByOcid(cleanId);
+    if (byOcid) return byOcid;
+
+    const db = getDb();
+
+    // 4. Check latest_notice_id directly
+    try {
+      const byNoticeIdRow = db.prepare('SELECT * FROM tenders WHERE latest_notice_id = ?').get(cleanId) as any;
+      if (byNoticeIdRow) return mapRowToTender(byNoticeIdRow);
+    } catch {
+      // Ignore
+    }
+
+    // 5. Map stale UUID or notice reference via source_notices table
+    try {
+      const noticeRows = db.prepare(
+        'SELECT tender_id, notice_id, ocid FROM source_notices WHERE tender_id = ? OR notice_id = ? OR ocid = ? OR id = ? ORDER BY id DESC LIMIT 5'
+      ).all(cleanId, cleanId, cleanId, cleanId) as any[];
+
+      if (noticeRows && noticeRows.length > 0) {
+        for (const row of noticeRows) {
+          if (row.tender_id && row.tender_id !== cleanId) {
+            const mapped = await this.getById(row.tender_id);
+            if (mapped) return mapped;
+          }
+          if (row.ocid) {
+            const mapped = await this.getByOcid(row.ocid);
+            if (mapped) return mapped;
+          }
+          if (row.notice_id) {
+            const mapped = await this.getByCanonicalReference(row.notice_id);
+            if (mapped) return mapped;
+          }
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    // 6. Map stale UUID via source_links table
+    try {
+      const linkRow = db.prepare('SELECT tender_id FROM source_links WHERE tender_id = ? LIMIT 1').get(cleanId) as any;
+      if (linkRow?.tender_id && linkRow.tender_id !== cleanId) {
+        const mapped = await this.getById(linkRow.tender_id);
+        if (mapped) return mapped;
+      }
+    } catch {
+      // Ignore
+    }
+
+    return null;
   }
 
   static async save(
@@ -133,18 +204,31 @@ export class TendersRepository {
 
     // Prioritize OCID for canonical deduplication, then canonicalReference
     let existing: any = null;
-    if (tender.ocid) {
-      existing = db.prepare('SELECT * FROM tenders WHERE ocid = ?').get(tender.ocid) as any;
-    }
-    if (!existing) {
+    let identityConflict = false;
+    let identityConflictDetails: string | undefined = undefined;
+
+    if (tender.canonicalReference) {
       existing = db.prepare('SELECT * FROM tenders WHERE canonical_reference = ?').get(tender.canonicalReference) as any;
+    }
+
+    if (tender.ocid) {
+      const existingByOcid = db.prepare('SELECT * FROM tenders WHERE ocid = ?').get(tender.ocid) as any;
+      if (existing && existingByOcid && existing.id !== existingByOcid.id) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Canonical reference '${tender.canonicalReference}' belongs to record ${existing.id}, but OCID '${tender.ocid}' belongs to distinct record ${existingByOcid.id}`;
+      } else if (existing && existing.ocid && existing.ocid !== tender.ocid) {
+        identityConflict = true;
+        identityConflictDetails = `IDENTITY_CONFLICT: Existing record for '${tender.canonicalReference}' has canonical OCID '${existing.ocid}', which conflicts with provided '${tender.ocid}'`;
+      } else if (!existing && existingByOcid) {
+        existing = existingByOcid;
+      }
     }
 
     const id = existing?.id || tender.id || randomUUID();
     const now = new Date().toISOString();
 
     const latestNoticeId = (tender as any).latestNoticeId || tender.canonicalReference;
-    const ocid = tender.ocid || existing?.ocid || null;
+    const ocid = identityConflict ? (existing?.ocid || null) : (tender.ocid || existing?.ocid || null);
     const title = tender.title !== undefined ? tender.title : (existing?.title ?? null);
     const plainEnglishSummary = tender.plainEnglishSummary ?? existing?.plain_english_summary ?? null;
     const buyerId = (tender as any).buyerId || existing?.buyer_id || null;
@@ -201,14 +285,21 @@ export class TendersRepository {
 
     const verificationGrade = tender.verificationGrade || existing?.verification_grade || 'D';
     const rawUrl = tender.officialNoticeUrl || existing?.official_notice_url || '';
-    const cleanNoticeId = (latestNoticeId || tender.canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
-    const officialNoticeUrl = cleanNoticeId
-      ? `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`
-      : rawUrl.replace(/svg.*$/i, '').trim();
+    let officialNoticeUrl = rawUrl.replace(/svg.*$/i, '').trim();
+    if (!rawUrl.includes('contractsfinder.service.gov.uk')) {
+      const cleanNoticeId = (latestNoticeId || tender.canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
+      if (cleanNoticeId) {
+        officialNoticeUrl = `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`;
+      }
+    }
     const applicationPortalUrl = (tender as any).applicationPortalUrl || existing?.application_portal_url || null;
     const serviceTags = JSON.stringify(tender.serviceTags || (existing?.service_tags ? JSON.parse(existing.service_tags) : []));
     const bidDecisionState = tender.bidDecisionState || existing?.bid_decision_state || 'UNDECIDED';
-    const evaluationCriteria = JSON.stringify(tender.evaluationCriteria || (existing?.evaluation_criteria ? JSON.parse(existing.evaluation_criteria) : []));
+    const evaluationCriteria = JSON.stringify(
+      (tender as any).enrichment
+        ? { criteria: tender.evaluationCriteria || [], enrichment: (tender as any).enrichment }
+        : tender.evaluationCriteria || (existing?.evaluation_criteria ? JSON.parse(existing.evaluation_criteria) : [])
+    );
     const requirements = JSON.stringify((tender as any).requirements || (existing?.requirements ? JSON.parse(existing.requirements) : []));
     const documents = JSON.stringify((tender as any).documents || (existing?.documents ? JSON.parse(existing.documents) : []));
 
@@ -278,6 +369,10 @@ export class TendersRepository {
 
     const saved = await TendersRepository.getById(id);
     if (!saved) throw new Error('Failed to retrieve saved tender');
+    if (identityConflict) {
+      saved.identityConflict = true;
+      saved.identityConflictDetails = identityConflictDetails;
+    }
     return saved;
   }
 
@@ -352,40 +447,74 @@ function mapRowToTender(row: any): TenderSummary {
     }
   }
 
+  let evaluationCriteria: any[] = [];
+  let enrichment: any = undefined;
+  if (row.evaluation_criteria) {
+    try {
+      const parsed = JSON.parse(row.evaluation_criteria);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        evaluationCriteria = Array.isArray(parsed.criteria) ? parsed.criteria : [];
+        enrichment = parsed.enrichment || undefined;
+      } else if (Array.isArray(parsed)) {
+        evaluationCriteria = parsed;
+      }
+    } catch {
+      evaluationCriteria = [];
+    }
+  }
+
+  const procurementStage = enrichment?.procurementStage || (
+    (row.title?.toLowerCase().includes('prior information') || row.plain_english_summary?.toLowerCase().includes('market engagement') || row.plain_english_summary?.toLowerCase().includes('preliminary market'))
+      ? 'PRELIMINARY MARKET ENGAGEMENT'
+      : 'OPEN TENDER'
+  );
+
   return {
     id: row.id,
-    canonicalReference: row.canonical_reference,
-    latestNoticeId: row.latest_notice_id || undefined,
-    ocid: row.ocid || undefined,
-    title: row.title || null,
-    plainEnglishSummary: row.plain_english_summary || '',
-    buyerName: row.buyer_name || null,
-    buyerId: row.buyer_id || undefined,
-    buyerType: 'Public Body',
-    valueAmount: row.value_amount !== null && row.value_amount !== undefined ? Number(row.value_amount) : undefined,
-    valueCurrency: row.value_currency || null,
-    valueDescription: row.value_description || undefined,
-    publishedAt: row.published_at || null,
-    submissionDeadline: row.submission_deadline || null,
-    clarificationDeadline: row.clarification_deadline || null,
-    daysRemaining,
-    qualification: row.qualification as Qualification,
-    deterministicResult: row.deterministic_result || undefined,
-    aiResult: row.ai_result || undefined,
-    finalQualification: row.final_qualification || undefined,
-    lifecycleStatus: row.lifecycle_status || 'ACTIVE',
-    verificationGrade: row.verification_grade as VerificationGrade,
-    officialNoticeUrl: row.official_notice_url,
-    applicationPortalUrl: row.application_portal_url || undefined,
-    serviceTags: row.service_tags ? JSON.parse(row.service_tags) : [],
-    sourceId: 'find_a_tender',
-    isArchived: Boolean(row.is_archived),
-    archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
-    discoveredAt: row.discovered_at,
-    lastVerifiedAt: row.last_verified_at,
-    bidDecisionState: row.bid_decision_state || 'UNDECIDED',
-    evaluationCriteria: row.evaluation_criteria ? JSON.parse(row.evaluation_criteria) : [],
-    requirements: row.requirements ? JSON.parse(row.requirements) : [],
-    documents: row.documents ? JSON.parse(row.documents) : [],
-  };
-}
+      canonicalReference: row.canonical_reference,
+      latestNoticeId: row.latest_notice_id || undefined,
+      ocid: row.ocid || undefined,
+      title: row.title || null,
+      plainEnglishSummary: row.plain_english_summary || '',
+      buyerName: row.buyer_name || null,
+      buyerId: row.buyer_id || undefined,
+      buyerType: 'Public Body',
+      valueAmount: row.value_amount !== null && row.value_amount !== undefined ? Number(row.value_amount) : undefined,
+      valueCurrency: row.value_currency || null,
+      valueDescription: row.value_description || undefined,
+      publishedAt: row.published_at || null,
+      submissionDeadline: row.submission_deadline || null,
+      clarificationDeadline: row.clarification_deadline || null,
+      daysRemaining,
+      qualification: row.qualification as Qualification,
+      deterministicResult: row.deterministic_result || undefined,
+      aiResult: row.ai_result || undefined,
+      finalQualification: row.final_qualification || undefined,
+      lifecycleStatus: row.lifecycle_status || 'ACTIVE',
+      verificationGrade: row.verification_grade as VerificationGrade,
+      officialNoticeUrl: row.official_notice_url,
+      applicationPortalUrl: row.application_portal_url || undefined,
+      serviceTags: row.service_tags ? JSON.parse(row.service_tags) : [],
+      sourceId: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
+      source: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
+      isArchived: Boolean(row.is_archived),
+      archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
+      discoveredAt: row.discovered_at,
+      lastVerifiedAt: row.last_verified_at,
+      bidDecisionState: row.bid_decision_state || 'UNDECIDED',
+      procurementStage,
+      description: row.plain_english_summary || '',
+      evaluationCriteria,
+      requirements: row.requirements ? JSON.parse(row.requirements) : [],
+      documents: row.documents ? JSON.parse(row.documents) : [],
+      enrichment,
+      completeness: enrichment?.completeness || undefined,
+      criticalFlags: enrichment?.criticalFlags || undefined,
+      keyDeliverables: enrichment?.scopeAndSpec?.buyerKeyDeliverables || enrichment?.scopeAndSpec?.keyDeliverables || undefined,
+      cpvCodes: enrichment?.cpvCodes || (enrichment?.factModel?.procurement?.cpvCodes?.value) || [],
+      smeSuitable: enrichment?.smeSuitable ?? (enrichment?.factModel?.procurement?.smeSuitable?.value ?? null),
+      vcseSuitable: enrichment?.vcseSuitable ?? (enrichment?.factModel?.procurement?.vcseSuitable?.value ?? null),
+      deliveryLocations: enrichment?.deliveryLocations || (enrichment?.factModel?.buyer?.region?.value ? [enrichment.factModel.buyer.region.value] : []),
+      sourceName: enrichment?.sourceName || (row.source_id === 'contracts_finder' ? 'Contracts Finder' : 'Find a Tender'),
+    };
+  }
