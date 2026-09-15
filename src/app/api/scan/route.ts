@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { FindATenderConnector, formatOfficialNoticeUrl, assertValidNoticeUrl } from '@/modules/public-tenders/connectors/find-a-tender';
+import { FindATenderConnector, formatOfficialNoticeUrl } from '@/modules/public-tenders/connectors/find-a-tender';
+import { ContractsFinderConnector, formatContractsFinderNoticeUrl } from '@/modules/public-tenders/connectors/contracts-finder';
 import { TenderClassifier } from '@/modules/public-tenders/services/tender-classifier';
 import { DeterministicFilter } from '@/modules/public-tenders/services/deterministic-filter';
 import { UrlVerifier } from '@/modules/public-tenders/services/url-verifier';
@@ -23,33 +24,39 @@ export async function POST(req: Request) {
     const buyersRepo = getBuyersRepository();
 
     const body = await req.json().catch(() => ({}));
+    const rawSourceId = (body.sourceId || 'find_a_tender').toLowerCase();
+    const isContractsFinder = rawSourceId === 'contracts_finder' || rawSourceId === 'contractsfinder';
+    const sourceId = isContractsFinder ? 'contracts_finder' : 'find_a_tender';
+    const sourceName = isContractsFinder ? 'Contracts Finder' : 'Find a Tender (FTS)';
+    const formatNoticeUrl = isContractsFinder ? formatContractsFinderNoticeUrl : formatOfficialNoticeUrl;
+
     const scanType = (body.scanType || 'quick').toLowerCase();
     const stage = (body.stage || 'tender').toLowerCase();
     const cursorUrl = body.cursorUrl || null;
     const maxPages = typeof body.maxPages === 'number' ? body.maxPages : (scanType === 'full' ? 10 : (scanType === 'paged' ? 1 : 3));
 
-    const fts = new FindATenderConnector();
-    const sourceRecord = await sourcesRepo.getById('find_a_tender');
+    const connector = isContractsFinder ? new ContractsFinderConnector() : new FindATenderConnector();
+    const sourceRecord = await sourcesRepo.getById(sourceId);
 
-    const limit = typeof body.limit === 'number' ? body.limit : 25;
+    const limit = typeof body.limit === 'number' ? body.limit : (isContractsFinder ? 100 : 25);
 
     let scanResult;
     if (scanType === 'paged' || cursorUrl) {
       if (stage === 'planning') {
-        scanResult = await fts.scanPipeline({ maxPages, cursorUrl, limit });
+        scanResult = await connector.scanPipeline({ maxPages, cursorUrl, limit });
       } else {
-        scanResult = await fts.scanLiveNotices({ maxPages, cursorUrl, limit });
+        scanResult = await connector.scanLiveNotices({ maxPages, cursorUrl, limit });
       }
     } else if (scanType === 'quick') {
       const sinceDate = sourceRecord?.lastSuccessfulScanAt
         ? new Date(sourceRecord.lastSuccessfulScanAt)
         : new Date(Date.now() - 3 * 86400000);
-      scanResult = await fts.scanNewNotices(sinceDate, { maxPages, limit });
+      scanResult = await connector.scanNewNotices(sinceDate, { maxPages, limit });
     } else if (scanType === 'deep') {
-      const liveRes = await fts.scanLiveNotices({ maxPages, limit });
-      const pipeRes = await fts.scanPipeline({ maxPages, limit });
+      const liveRes = await connector.scanLiveNotices({ maxPages, limit });
+      const pipeRes = await connector.scanPipeline({ maxPages, limit });
       scanResult = {
-        sourceId: 'find_a_tender',
+        sourceId,
         scannedAt: new Date().toISOString(),
         noticesChecked: liveRes.noticesChecked + pipeRes.noticesChecked,
         pagesFetched: liveRes.pagesFetched + pipeRes.pagesFetched,
@@ -67,7 +74,7 @@ export async function POST(req: Request) {
       };
     } else {
       // 'full'
-      scanResult = await fts.scanLiveNotices({ maxPages, limit });
+      scanResult = await connector.scanLiveNotices({ maxPages, limit });
     }
 
     const rawReleasesFetched = scanResult.noticesChecked;
@@ -136,11 +143,11 @@ export async function POST(req: Request) {
           expiredNotices++;
         }
 
-        const cleanOfficialUrl = formatOfficialNoticeUrl(candidate.noticeId, candidate.officialNoticeUrl);
+        const cleanOfficialUrl = formatNoticeUrl(candidate.noticeId, candidate.officialNoticeUrl);
 
         // 3. Record raw notice in database with content hashing & versioning for all genuine candidates
         const rawRecordResult = await sourcesRepo.recordSourceNotice(
-          'find_a_tender',
+          sourceId,
           candidate.noticeId,
           candidate.rawPayload,
           cleanOfficialUrl,
@@ -287,12 +294,12 @@ export async function POST(req: Request) {
         }
 
         // 9. Link raw source notice to canonical tender (source-scoped)
-        await sourcesRepo.linkSourceNoticesToTender('find_a_tender', saved.id, candidate.noticeId, candidate.ocid);
+        await sourcesRepo.linkSourceNoticesToTender(sourceId, saved.id, candidate.noticeId, candidate.ocid);
 
         // 10. Record link verification
         await sourcesRepo.recordSourceLink(
           saved.id,
-          'find_a_tender',
+          sourceId,
           cleanOfficialUrl,
           'official_notice',
           verification.grade,
@@ -356,7 +363,7 @@ export async function POST(req: Request) {
     // Record scan run
     await sourcesRepo.recordScanRun({
       scanType,
-      sourceId: 'find_a_tender',
+      sourceId,
       status: healthStatus === 'error' ? 'failed' : 'completed',
       completedAt: new Date().toISOString(),
       noticesChecked: rawReleasesFetched,
@@ -371,7 +378,7 @@ export async function POST(req: Request) {
     });
 
     // Update source health truthfully
-    await sourcesRepo.updateHealth('find_a_tender', healthStatus, {
+    await sourcesRepo.updateHealth(sourceId, healthStatus, {
       successful: isScanSuccessful,
       lastScanError: errorMessage,
       noticesScannedDelta: rawReleasesFetched,
@@ -398,7 +405,8 @@ export async function POST(req: Request) {
       message: statusMessage,
       scanType,
       stage,
-      source: 'Find a Tender (FTS)',
+      source: sourceName,
+      sourceId,
       sourceHealth: healthStatus,
       pagesFetched: scanResult.pagesFetched,
       rawReleasesFetched,

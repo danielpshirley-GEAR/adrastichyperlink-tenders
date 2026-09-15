@@ -285,10 +285,13 @@ export class TendersRepository {
 
     const verificationGrade = tender.verificationGrade || existing?.verification_grade || 'D';
     const rawUrl = tender.officialNoticeUrl || existing?.official_notice_url || '';
-    const cleanNoticeId = (latestNoticeId || tender.canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
-    const officialNoticeUrl = cleanNoticeId
-      ? `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`
-      : rawUrl.replace(/svg.*$/i, '').trim();
+    let officialNoticeUrl = rawUrl.replace(/svg.*$/i, '').trim();
+    if (!rawUrl.includes('contractsfinder.service.gov.uk')) {
+      const cleanNoticeId = (latestNoticeId || tender.canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
+      if (cleanNoticeId) {
+        officialNoticeUrl = `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`;
+      }
+    }
     const applicationPortalUrl = (tender as any).applicationPortalUrl || existing?.application_portal_url || null;
     const serviceTags = JSON.stringify(tender.serviceTags || (existing?.service_tags ? JSON.parse(existing.service_tags) : []));
     const bidDecisionState = tender.bidDecisionState || existing?.bid_decision_state || 'UNDECIDED';
@@ -492,7 +495,7 @@ function mapRowToTender(row: any): TenderSummary {
       officialNoticeUrl: row.official_notice_url,
       applicationPortalUrl: row.application_portal_url || undefined,
       serviceTags: row.service_tags ? JSON.parse(row.service_tags) : [],
-      sourceId: 'find_a_tender',
+      sourceId: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
       isArchived: Boolean(row.is_archived),
       archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
       discoveredAt: row.discovered_at,

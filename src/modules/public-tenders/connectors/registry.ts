@@ -1,6 +1,7 @@
 // src/modules/public-tenders/connectors/registry.ts
 import { ProcurementConnector } from './types';
 import { FindATenderConnector } from './find-a-tender';
+import { ContractsFinderConnector } from './contracts-finder';
 import { getSourcesRepository } from '@/shared/database/db';
 import { SourceHealthStatus } from '@/shared/database/repositories/sources';
 
@@ -21,8 +22,8 @@ export class SourceRegistry {
   private connectors: Map<string, ProcurementConnector> = new Map();
 
   private constructor() {
-    // In Phase 2, Find a Tender is the ONLY implemented connector.
     this.register(new FindATenderConnector());
+    this.register(new ContractsFinderConnector());
   }
 
   public static getInstance(): SourceRegistry {
@@ -62,7 +63,7 @@ export class SourceRegistry {
         name: 'Contracts Finder',
         baseUrl: 'https://www.contractsfinder.service.gov.uk',
         portalType: 'England & non-devolved (>£12k central, >£30k local)',
-        health: 'not_implemented',
+        health: 'untested',
         lastScanAt: null,
         noticesChecked: 0,
         relevantFound: 0,
@@ -132,20 +133,25 @@ export class SourceRegistry {
         const recordMap = new Map(records.map((r) => [r.id, r]));
         return canonicalSources.map((cs) => {
           const matched = recordMap.get(cs.id) || recordMap.get(cs.id.replace(/_/g, '-'));
+          const isImplemented = this.connectors.has(cs.id);
+          let health = (matched?.healthStatus as SourceHealthStatus) || cs.health;
+          if (isImplemented && health === 'not_implemented') {
+            health = 'untested';
+          }
           if (matched) {
             return {
               id: cs.id,
               name: matched.name || cs.name,
               baseUrl: matched.baseUrl || cs.baseUrl,
               portalType: cs.portalType || matched.portalType,
-              health: matched.healthStatus as SourceHealthStatus,
+              health,
               lastScanAt: matched.lastSuccessfulScanAt,
               noticesChecked: matched.totalNoticesScanned ?? 0,
               relevantFound: matched.totalRelevantFound ?? 0,
               scanFrequency: matched.scanFrequency || cs.scanFrequency,
             };
           }
-          return cs;
+          return { ...cs, health };
         });
       }
     } catch {

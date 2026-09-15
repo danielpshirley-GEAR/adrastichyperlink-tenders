@@ -29,9 +29,11 @@ export interface RawNoticeRecord {
   title: string | null;
   buyerName: string | null;
   buyerType?: string;
+  buyerLocation?: string;
   description: string;
   valueAmount?: number;
   valueCurrency?: string | null;
+  minValueAmount?: number;
   publishedAt?: string | null;
   submissionDeadline?: string | null;
   clarificationDeadline?: string | null;
@@ -39,6 +41,8 @@ export interface RawNoticeRecord {
   applicationPortalUrl?: string;
   documentLinks: RawDocumentLink[];
   cpvCodes: string[];
+  smeSuitable?: boolean;
+  vcseSuitable?: boolean;
   rawPayload: Record<string, unknown>;
 }
 

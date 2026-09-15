@@ -104,13 +104,15 @@ export class UrlVerifier {
         const parsedUrl = new URL(finalRedirectUrl);
         isOfficialDomain =
           parsedUrl.hostname === 'www.find-tender.service.gov.uk' ||
-          parsedUrl.hostname === 'find-tender.service.gov.uk';
+          parsedUrl.hostname === 'find-tender.service.gov.uk' ||
+          parsedUrl.hostname === 'www.contractsfinder.service.gov.uk' ||
+          parsedUrl.hostname === 'contractsfinder.service.gov.uk';
       } catch {
         isOfficialDomain = false;
       }
 
       // 2. Check exact notice route
-      const isExactNoticeRoute = isOfficialDomain && finalRedirectUrl.includes('/Notice/');
+      const isExactNoticeRoute = isOfficialDomain && /\/notice\//i.test(finalRedirectUrl);
 
       // 3. Check notice identifier
       let idMatches = false;

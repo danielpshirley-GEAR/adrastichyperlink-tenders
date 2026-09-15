@@ -120,12 +120,33 @@ const NEGATIVE_EXCLUSIONS = [
   { pattern: 'plumbing', reason: 'Plumbing and heating trades' },
   { pattern: 'joinery', reason: 'Joinery and carpentry trades' },
   { pattern: 'roofing', reason: 'Roofing and guttering works' },
+  { pattern: 'roof repair', reason: 'Roof repair and maintenance' },
+  { pattern: 'flat roof repair', reason: 'Roof repair and maintenance' },
   { pattern: 'ground works', reason: 'Ground works and excavation' },
   { pattern: 'groundworks', reason: 'Civil engineering groundworks' },
   { pattern: 'fencing', reason: 'Fencing and perimeter works' },
   { pattern: 'multi-trade', reason: 'Multi-trade construction' },
   { pattern: 'demolition', reason: 'Demolition services' },
   { pattern: 'asbestos', reason: 'Hazardous material remediation' },
+  // Agriculture, arboriculture & growing media
+  { pattern: 'arboricultural', reason: 'Arboriculture / forestry' },
+  { pattern: 'tree planting', reason: 'Tree planting / forestry' },
+  { pattern: 'tree surgery', reason: 'Tree surgery / forestry' },
+  { pattern: 'growing media', reason: 'Agricultural / horticultural growing media' },
+  // Passenger & school transport services
+  { pattern: 'passenger assistant', reason: 'Passenger transport services' },
+  { pattern: 'taxi and mpv', reason: 'Taxi and MPV transport services' },
+  { pattern: 'taxi route', reason: 'Taxi and transport routing' },
+  { pattern: 'home to school transport', reason: 'Home to school transport' },
+  // Medical imaging & clinical equipment
+  { pattern: 'medical imaging', reason: 'Medical imaging equipment / clinical diagnostics' },
+  { pattern: 'clinical video', reason: 'Clinical video equipment / endoscopy' },
+  { pattern: 'endoscopy', reason: 'Clinical endoscopy equipment' },
+  { pattern: 'ultrasound', reason: 'Clinical ultrasound equipment' },
+  // Hardware & conferencing equipment supply
+  { pattern: 'video conferencing hardware', reason: 'Video conferencing hardware supply' },
+  { pattern: 'conferencing hardware', reason: 'Conferencing hardware supply' },
+  { pattern: 'broadcast hardware', reason: 'Broadcast hardware supply' },
 ];
 
 export class DeterministicFilter {

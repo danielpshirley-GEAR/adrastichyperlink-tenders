@@ -11,7 +11,7 @@
     "deploy:review": "npm run build:review && npx wrangler pages deploy out --project-name adrastichyperlink-tenders --branch main",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsx scripts/test_unit.ts"
+    "test": "tsx scripts/test_unit.ts && tsx scripts/test_contracts_finder.ts"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",

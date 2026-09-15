@@ -643,21 +643,25 @@ async function runUnitTests() {
     );
   });
 
-  // 28. Bug 2 Fix: Find a Tender healthy + 6 not implemented -> 1 / 7 Active, 6 Not Implemented
-  await test('Bug 2: Normalized SourceMeta -> 1 / 7 Active, 6 Not Implemented', async () => {
+  // 28. Phase 2: Source Registry -> 2 / 7 Active, 5 Not Implemented
+  await test('Source Registry -> 2 / 7 Active, 5 Not Implemented', async () => {
     const { SourceRegistry } = await import('../src/modules/public-tenders/connectors/registry');
     const sources = await SourceRegistry.getInstance().getSourcesMeta();
     assert.strictEqual(sources.length, 7, 'Must have exactly 7 canonical sources');
 
-    const activeSourcesCount = sources.filter((s) => s.health === 'healthy' || (s.health !== 'not_implemented' && s.health !== 'untested')).length;
+    const activeSourcesCount = sources.filter((s) => s.health !== 'not_implemented').length;
     const notImplementedCount = sources.filter((s) => s.health === 'not_implemented').length;
 
-    assert.strictEqual(activeSourcesCount, 1, 'Exactly 1 source (Find a Tender) must be active');
-    assert.strictEqual(notImplementedCount, 6, 'Exactly 6 sources must be not_implemented');
+    assert.strictEqual(activeSourcesCount, 2, 'Exactly 2 sources (Find a Tender & Contracts Finder) must be active');
+    assert.strictEqual(notImplementedCount, 5, 'Exactly 5 sources must be not_implemented');
 
     const fts = sources.find((s) => s.id === 'find_a_tender');
     assert.ok(fts, 'Find a Tender must be present in sources');
     assert.strictEqual(fts?.health, 'healthy', 'Find a Tender must be healthy');
+
+    const cf = sources.find((s) => s.id === 'contracts_finder');
+    assert.ok(cf, 'Contracts Finder must be present in sources');
+    assert.ok(cf?.health === 'healthy' || cf?.health === 'untested', 'Contracts Finder must be healthy or untested');
   });
 
   // 29. Bug 2 Fix: Find a Tender real counters display

@@ -277,10 +277,13 @@ export class SupabaseTendersRepository implements ITendersRepository {
     const buyerId = tender.buyerId || (existing as any)?.buyerId || null;
 
     const rawUrl = tender.officialNoticeUrl || existing?.officialNoticeUrl || '';
-    const cleanNoticeId = (latestNoticeId || canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
-    const officialNoticeUrl = cleanNoticeId
-      ? `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`
-      : rawUrl.replace(/svg.*$/i, '').trim();
+    let officialNoticeUrl = rawUrl.replace(/svg.*$/i, '').trim();
+    if (!rawUrl.includes('contractsfinder.service.gov.uk')) {
+      const cleanNoticeId = (latestNoticeId || canonicalReference || rawUrl).match(/(\d{6}-\d{4})/)?.[1];
+      if (cleanNoticeId) {
+        officialNoticeUrl = `https://www.find-tender.service.gov.uk/Notice/${cleanNoticeId}`;
+      }
+    }
 
     const payload: any = {
       id,
@@ -480,7 +483,7 @@ export class SupabaseTendersRepository implements ITendersRepository {
       officialNoticeUrl: row.official_notice_url,
       applicationPortalUrl: row.application_portal_url || undefined,
       serviceTags: Array.isArray(row.service_tags) ? row.service_tags : [],
-      sourceId: 'find_a_tender',
+      sourceId: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
       isArchived: Boolean(row.is_archived),
       archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
       discoveredAt: row.discovered_at,

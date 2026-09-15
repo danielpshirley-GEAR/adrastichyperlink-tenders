@@ -10,15 +10,18 @@ export async function GET() {
   const geminiConfigured = GeminiClient.isConfigured();
 
   let ftsSource = null;
-  let otherSourcesCount = 6;
-  let notImplementedCount = 6;
+  let cfSource = null;
+  let otherSourcesCount = 5;
+  let notImplementedCount = 5;
 
   try {
     const sourcesRepo = getSourcesRepository();
     const allSources = await sourcesRepo.getAll();
     ftsSource = allSources.find((s) => s.id === 'find_a_tender') || null;
-    otherSourcesCount = allSources.filter((s) => s.id !== 'find_a_tender').length;
-    notImplementedCount = allSources.filter((s) => s.healthStatus === 'not_implemented').length;
+    cfSource = allSources.find((s) => s.id === 'contracts_finder') || null;
+    const remaining = allSources.filter((s) => s.id !== 'find_a_tender' && s.id !== 'contracts_finder');
+    otherSourcesCount = remaining.length || 5;
+    notImplementedCount = remaining.filter((s) => s.healthStatus === 'not_implemented').length || 5;
   } catch {
     // DB unconfigured or probe error
   }
@@ -76,6 +79,11 @@ export async function GET() {
     ? 'FIND A TENDER — HEALTHY'
     : (ftsHealth === 'untested' ? 'FIND A TENDER — UNTESTED' : (ftsHealth === 'degraded' ? 'FIND A TENDER — DEGRADED' : 'FIND A TENDER — ERROR'));
 
+  const cfHealth = cfSource?.healthStatus === 'not_implemented' ? 'untested' : (cfSource?.healthStatus || 'untested');
+  const cfStatusString = cfHealth === 'healthy'
+    ? 'CONTRACTS FINDER — HEALTHY'
+    : (cfHealth === 'untested' ? 'CONTRACTS FINDER — UNTESTED' : (cfHealth === 'degraded' ? 'CONTRACTS FINDER — DEGRADED' : 'CONTRACTS FINDER — ERROR'));
+
   return NextResponse.json({
     runtime,
     commit,
@@ -106,6 +114,19 @@ export async function GET() {
       noticesChecked: ftsSource?.totalNoticesScanned || 0,
       relevantFound: ftsSource?.totalRelevantFound || 0,
       lastError: ftsSource?.lastScanError || null,
+    },
+    contractsFinder: {
+      status: cfStatusString,
+      health: cfHealth,
+      lastScanAt: cfSource?.lastSuccessfulScanAt || null,
+      noticesChecked: cfSource?.totalNoticesScanned || 0,
+      relevantFound: cfSource?.totalRelevantFound || 0,
+      lastError: cfSource?.lastScanError || null,
+    },
+    remainingSources: {
+      total: otherSourcesCount,
+      notImplemented: notImplementedCount,
+      status: 'NOT IMPLEMENTED',
     },
     otherSources: {
       total: otherSourcesCount,
