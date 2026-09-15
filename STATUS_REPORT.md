@@ -3,13 +3,15 @@
 ## 1. Executive Summary & Git Identity
 - **Repository**: `danielpshirley-GEAR/adrastichyperlink-tenders`
 - **Active Branch**: `preview` (PR #1 against `main`)
-- **Verified Commits**: `62a318f` (Core resilient data contract & multi-key lookup), `d254eac` (Auto-reconnecting tunnel daemon), plus strict auth cleanup
-- **Persistent Live Preview**: Auto-reconnecting background daemon active
+- **Verified Commits**: `62a318f` (Core resilient data contract & multi-key lookup), `c6ac630` (Render blueprint & fail-closed detection), `b49f609` (Source #2 Contracts Finder implementation)
+- **Persistent Live Preview**: Hosted Render Web Service (`https://adrastichyperlink-tenders-preview.onrender.com`)
 - **Safety Commitments**: 
   - `main` branch: NOT modified (0 commits).
   - Production deployment: NOT modified / untouched.
-  - Contracts Finder: NOT added (strictly scoping Find a Tender evidence integrity).
-- **Automated Test Results**: **58 / 58 tests passing** (34 unit & offline tests + 24 authentication & security tests).
+  - Source #1 (Find a Tender): STRICTLY LOCKED (zero regressions).
+  - Source #2 (Contracts Finder): Fully implemented and validated.
+  - Source #3: NOT started.
+- **Automated Test Results**: **82 / 82 tests passing** (34 unit & offline tests + 24 authentication & security tests + 24 Contracts Finder tests).
 
 ---
 
@@ -70,6 +72,48 @@
 
 ---
 
-## 4. Test Suite Summary (51 / 51 Tests Passed)
+## 4. Test Suite Summary (82 / 82 Tests Passed)
 - 34 Unit & Offline Adapter Tests (Keywords, Hashing, Fail-Closed Provenance, Form Detection, Multi-Key Lookup)
-- 17 Route-Level Authentication Tests (Strict 401s, Bearer Token Validation, HMAC Session Cookies)
+- 24 Route-Level Authentication Tests (Strict 401s, Bearer Token Validation, HMAC Session Cookies, No Token in URL/DOM)
+- 24 Comprehensive Contracts Finder Tests (OCDS Parsing, Stage Filtering, 403/429 Backoff, Provenance, False Positives)
+
+---
+
+## 5. Source #2 Contracts Finder Verification (Commit `b49f609`)
+
+### Ingestion & Endpoints
+- **Official OCDS Search**: `GET https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search`
+- **Notice Web Route**: `https://www.contractsfinder.service.gov.uk/Notice/{uuid}`
+- **Cursor-based pagination**: Supported via `links.next` with `limit=100` and `stages=planning,tender`. Pure award-only and contract-only releases excluded from new bid discovery.
+- **Rate-Limit Resilience**: Progressive backoff up to 300s on HTTP 403 / 429, capped at 5 retries. During live 60-day scan, cleanly handled HTTP 429 with 120s backoff and resumed ingestion.
+
+### Live 60-Day Scan Metrics
+- **Total Releases Fetched**: 442 bid releases across 6 pages
+- **Deterministic Exclusions**: 229 false positives rejected (arboriculture, taxi routing, medical imaging, hardware, roofing)
+- **Creative Candidates Analysed**: 213 notices evaluated
+- **Expired Submissions**: 307 marked expired/archived
+- **Active Creative Opportunities Saved**: 4 (`POSSIBLE` qualifications)
+- **Supabase Database Writes**: 213 records written with SHA-256 raw JSON integrity
+
+### Verified Real Notice Opportunities
+1. **Newry, Mourne and Down District Council** (`0b75532b-8448-4ce1-bc1d-f54027d14a57`):
+   - Title: *CA18403 - RFQ 2026/32 - PR Agent for DTFF Celebration Event*
+   - Value: £29,500 GBP | Deadline: 2026-09-15 | Verification: Grade B
+   - Link: https://www.contractsfinder.service.gov.uk/Notice/0b75532b-8448-4ce1-bc1d-f54027d14a57
+2. **PKAT** (`9e6075b9-419a-4770-a98e-05fa579ca43d`):
+   - Title: *CA18366 - Request for Tender - Brand, Media and Communications Engagement Strategy*
+   - Deadline: 2026-09-15 | Verification: Grade A (HTTP 200)
+   - Link: https://www.contractsfinder.service.gov.uk/Notice/9e6075b9-419a-4770-a98e-05fa579ca43d
+3. **Newry, Mourne and Down District Council** (`3b871e25-88b7-494f-80a1-bbeafa379fcb`):
+   - Title: *CA18364 - Tender 56/2026 - NMANDD PEACEPLUS Thriving Together Community Justice - Youth Intervention Programme Impact: Choices and Consequences*
+   - Value: £91,052 GBP | Deadline: 2026-09-30 | Verification: Grade B
+   - Link: https://www.contractsfinder.service.gov.uk/Notice/3b871e25-88b7-494f-80a1-bbeafa379fcb
+4. **Gassco AS UK** (`9aedcf6c-93ed-48dd-b82c-a069f1a30bef`):
+   - Title: *Video Wall & Software Control Room Display*
+   - Value: £250,000 GBP | Deadline: 2026-09-15 | Verification: Grade A (HTTP 200)
+   - Link: https://www.contractsfinder.service.gov.uk/Notice/9aedcf6c-93ed-48dd-b82c-a069f1a30bef
+
+### Active Source Registry & Health
+- **Active Connectors**: **2 / 7 Active** (Find a Tender: `HEALTHY`, Contracts Finder: Registered & Active)
+- **Not Implemented**: **5 Not Implemented** (Public Contracts Scotland, Sell2Wales, NHS Atamis, MOD DSP, eTendersNI)
+- **Live Preview Runtime**: Render Web Service (`b49f609`) with Supabase PostgreSQL and Gemini connected.
