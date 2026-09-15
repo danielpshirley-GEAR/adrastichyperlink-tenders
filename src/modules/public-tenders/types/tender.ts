@@ -76,15 +76,27 @@ export interface TenderSummary {
   geminiAnalysis?: any;
   requirements?: TenderRequirement[];
   documents?: TenderDocumentItem[];
-  enrichment?: TenderEnrichment;
+  enrichment?: TenderEnrichment | Partial<TenderEnrichment> | Record<string, any>;
   completeness?: InformationCompleteness;
   criticalFlags?: string[];
   keyDeliverables?: string[];
+  cpvCodes?: string[];
+  smeSuitable?: boolean | null;
+  vcseSuitable?: boolean | null;
+  deliveryLocations?: string[];
+  sourceName?: string;
   isEligibilityPublished?: boolean;
   eligibilityNoticeText?: string;
   identityConflict?: boolean;
   identityConflictDetails?: string;
 }
+
+export type CoverageState =
+  | 'NOT_TESTED'
+  | 'DISCOVERY_INCOMPLETE'
+  | 'COVERAGE_TESTING'
+  | 'COVERAGE_VERIFIED'
+  | 'ACCESS_LIMITED';
 
 export type ProcurementStage =
   | 'OPEN TENDER'
@@ -451,6 +463,13 @@ export interface TenderEnrichment {
   factModel?: TenderFactModel;
   completeness?: InformationCompleteness;
   criticalFlags?: string[];
+  cpvCodes?: string[];
+  smeSuitable?: boolean | null;
+  vcseSuitable?: boolean | null;
+  sourceName?: string;
+  sourceId?: string;
+  deliveryLocations?: string[];
+  coverageState?: CoverageState;
 }
 
 

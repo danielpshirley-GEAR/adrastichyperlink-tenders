@@ -104,8 +104,9 @@ export class FindATenderConnector implements ProcurementConnector {
       return this.executeOcdsPagedFetch(options.cursorUrl, options);
     }
     const limit = options.limit || 25;
+    const stage = options.stage || 'tender';
     const params = new URLSearchParams();
-    params.set('stages', 'tender');
+    params.set('stages', stage);
     params.set('limit', String(limit));
 
     if (since instanceof Date && !isNaN(since.getTime())) {

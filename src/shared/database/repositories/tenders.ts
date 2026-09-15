@@ -511,5 +511,10 @@ function mapRowToTender(row: any): TenderSummary {
       completeness: enrichment?.completeness || undefined,
       criticalFlags: enrichment?.criticalFlags || undefined,
       keyDeliverables: enrichment?.scopeAndSpec?.buyerKeyDeliverables || enrichment?.scopeAndSpec?.keyDeliverables || undefined,
+      cpvCodes: enrichment?.cpvCodes || (enrichment?.factModel?.procurement?.cpvCodes?.value) || [],
+      smeSuitable: enrichment?.smeSuitable ?? (enrichment?.factModel?.procurement?.smeSuitable?.value ?? null),
+      vcseSuitable: enrichment?.vcseSuitable ?? (enrichment?.factModel?.procurement?.vcseSuitable?.value ?? null),
+      deliveryLocations: enrichment?.deliveryLocations || (enrichment?.factModel?.buyer?.region?.value ? [enrichment.factModel.buyer.region.value] : []),
+      sourceName: enrichment?.sourceName || (row.source_id === 'contracts_finder' ? 'Contracts Finder' : 'Find a Tender'),
     };
   }

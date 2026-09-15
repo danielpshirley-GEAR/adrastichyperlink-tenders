@@ -52,7 +52,29 @@ export async function POST(req: Request) {
       const sinceDate = sourceRecord?.lastSuccessfulScanAt
         ? new Date(sourceRecord.lastSuccessfulScanAt)
         : new Date(Date.now() - 3 * 86400000);
-      scanResult = await connector.scanNewNotices(sinceDate, { maxPages, limit });
+
+      const tenderRes = await connector.scanNewNotices(sinceDate, { maxPages, limit, stage: 'tender' });
+      const pipeRes = isContractsFinder
+        ? await (connector as ContractsFinderConnector).scanPipeline({ maxPages, limit })
+        : await (connector as FindATenderConnector).scanNewNotices(sinceDate, { maxPages, limit, stage: 'planning' });
+
+      scanResult = {
+        sourceId,
+        scannedAt: new Date().toISOString(),
+        noticesChecked: tenderRes.noticesChecked + pipeRes.noticesChecked,
+        pagesFetched: tenderRes.pagesFetched + pipeRes.pagesFetched,
+        apiRequestsMade: tenderRes.apiRequestsMade + pipeRes.apiRequestsMade,
+        rateLimitRetries: tenderRes.rateLimitRetries + pipeRes.rateLimitRetries,
+        durationMs: tenderRes.durationMs + pipeRes.durationMs,
+        relevantCandidates: [...tenderRes.relevantCandidates, ...pipeRes.relevantCandidates],
+        errors: [...tenderRes.errors, ...pipeRes.errors],
+        paginationComplete: tenderRes.paginationComplete && pipeRes.paginationComplete,
+        truncatedBySafetyLimit: tenderRes.truncatedBySafetyLimit || pipeRes.truncatedBySafetyLimit,
+        nextCursorPresent: tenderRes.nextCursorPresent || pipeRes.nextCursorPresent,
+        nextCursorUrl: tenderRes.nextCursorUrl || pipeRes.nextCursorUrl,
+        earliestDate: pipeRes.earliestDate && tenderRes.earliestDate ? (pipeRes.earliestDate < tenderRes.earliestDate ? pipeRes.earliestDate : tenderRes.earliestDate) : (tenderRes.earliestDate || pipeRes.earliestDate),
+        latestDate: pipeRes.latestDate && tenderRes.latestDate ? (pipeRes.latestDate > tenderRes.latestDate ? pipeRes.latestDate : tenderRes.latestDate) : (tenderRes.latestDate || pipeRes.latestDate),
+      };
     } else if (scanType === 'deep') {
       const liveRes = await connector.scanLiveNotices({ maxPages, limit });
       const pipeRes = await connector.scanPipeline({ maxPages, limit });
@@ -75,7 +97,11 @@ export async function POST(req: Request) {
       };
     } else {
       // 'full'
-      scanResult = await connector.scanLiveNotices({ maxPages, limit });
+      if (stage === 'planning') {
+        scanResult = await connector.scanPipeline({ maxPages, limit });
+      } else {
+        scanResult = await connector.scanLiveNotices({ maxPages, limit });
+      }
     }
 
     const rawReleasesFetched = scanResult.noticesChecked;
@@ -84,6 +110,7 @@ export async function POST(req: Request) {
     const uniqueNoticesSet = new Set<string>();
     const uniqueOcidsSet = new Set<string>();
 
+    let newRawNotices = 0;
     let expiredNotices = 0;
     let pipelineNotices = 0;
     let deterministicallyRejected = 0;
@@ -108,6 +135,8 @@ export async function POST(req: Request) {
     // Process all candidate releases
     for (const candidate of candidates) {
       try {
+        if (!candidate.noticeId) continue;
+
         uniqueNoticesSet.add(candidate.noticeId);
         if (candidate.ocid) uniqueOcidsSet.add(candidate.ocid);
 
@@ -117,42 +146,15 @@ export async function POST(req: Request) {
           pipelineNotices++;
         }
 
-        // 1. Fast in-memory deterministic filter
-        const deterministic = DeterministicFilter.evaluate({
-          title: candidate.title,
-          description: candidate.description,
-          cpvCodes: candidate.cpvCodes,
-          submissionDeadline: candidate.submissionDeadline,
-          noticeType: isPlanningNotice ? 'planning' : 'tender',
-        });
-
-        // If not a creative match, skip database writes and LLM calls
-        if (deterministic.isNegativeMatch || (deterministic.qualification === 'REJECT' && !deterministic.isExpired)) {
-          deterministicallyRejected++;
-          rejectCount++;
-          continue;
-        }
-
-        deterministicCandidates++;
-
-        // 2. Check if deadline is already expired
-        const isExpired = candidate.submissionDeadline
-          ? new Date(candidate.submissionDeadline).getTime() < Date.now()
-          : false;
-
-        if (isExpired) {
-          expiredNotices++;
-        }
-
         const cleanOfficialUrl = formatNoticeUrl(candidate.noticeId, candidate.officialNoticeUrl);
 
-        // 3. Record raw notice in database with content hashing & versioning for all genuine candidates
+        // 1. CORE ARCHITECTURAL LAW: Record raw notice FIRST before any relevance filter
         const rawRecordResult = await sourcesRepo.recordSourceNotice(
           sourceId,
           candidate.noticeId,
           candidate.rawPayload,
           cleanOfficialUrl,
-          null, // linked after tender save
+          null, // linked after canonical tender save
           candidate.publishedAt,
           candidate.submissionDeadline,
           noticeTag,
@@ -161,6 +163,36 @@ export async function POST(req: Request) {
 
         if (rawRecordResult.isDuplicate) {
           duplicatesCount++;
+        } else {
+          newRawNotices++;
+        }
+
+        // 2. Fast deterministic screen
+        const deterministic = DeterministicFilter.evaluate({
+          title: candidate.title,
+          description: candidate.description,
+          cpvCodes: candidate.cpvCodes,
+          submissionDeadline: candidate.submissionDeadline,
+          noticeType: isPlanningNotice ? 'planning' : 'tender',
+        });
+
+        // If not a creative match, record rejection and stop before LLM/canonical
+        if (deterministic.isNegativeMatch || (deterministic.qualification === 'REJECT' && !deterministic.isExpired)) {
+          deterministicallyRejected++;
+          rejectCount++;
+          // Raw notice is already recorded in source_notices.
+          continue;
+        }
+
+        deterministicCandidates++;
+
+        // 3. Check if deadline is already expired
+        const isExpired = candidate.submissionDeadline
+          ? new Date(candidate.submissionDeadline).getTime() < Date.now()
+          : false;
+
+        if (isExpired) {
+          expiredNotices++;
         }
 
         // 4. Classify candidate with distinct deterministic and Gemini evaluation
@@ -287,8 +319,19 @@ export async function POST(req: Request) {
           officialNoticeUrl: cleanOfficialUrl,
           applicationPortalUrl: candidate.applicationPortalUrl,
           serviceTags: classification.final.serviceMatches as any,
+          sourceId,
+          source: sourceId,
+          procurementStage: isPlanningNotice ? 'PLANNED PROCUREMENT' : 'OPEN TENDER',
           isArchived,
           archivedReason,
+          enrichment: {
+            ...(existingTender?.enrichment || {}),
+            cpvCodes: candidate.cpvCodes || [],
+            smeSuitable: candidate.smeSuitable ?? null,
+            vcseSuitable: candidate.vcseSuitable ?? null,
+            sourceName,
+            sourceId,
+          },
           evaluationCriteria: classification.final.analysis ? [{
             primaryPurpose: classification.final.primaryPurpose,
             geminiRun,
@@ -421,12 +464,20 @@ export async function POST(req: Request) {
       sourceHealth: healthStatus,
       pagesFetched: scanResult.pagesFetched,
       rawReleasesFetched,
+      rawNoticesSeen: rawReleasesFetched,
+      newRawNotices,
+      unchangedNotices: duplicatesCount,
       uniqueNotices: uniqueNoticesSet.size,
       uniqueOcids: uniqueOcidsSet.size,
       expiredNotices,
       pipelineNotices,
       deterministicallyRejected,
+      rejectedNotices: deterministicallyRejected,
       deterministicCandidates,
+      candidateNotices: deterministicCandidates,
+      canonicalOpportunities: canonicalTendersCreated + canonicalTendersUpdated,
+      scanStarted: new Date(startTime).toISOString(),
+      scanCompleted: new Date().toISOString(),
       geminiQueued,
       geminiCompleted,
       geminiSkipped,

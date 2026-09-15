@@ -547,7 +547,7 @@ async function run() {
     assert.strictEqual(evalResult.passed, false, 'Must reject HTE scientific software');
     assert.strictEqual(evalResult.qualification, 'REJECT');
     assert.strictEqual(evalResult.isNegativeMatch, true);
-    assert.ok(evalResult.rejectedReason?.includes('laboratory') || evalResult.rejectedReason?.includes('scientific'));
+    assert.ok(evalResult.rejectedReason?.toLowerCase().includes('laboratory') || evalResult.rejectedReason?.toLowerCase().includes('scientific'));
   });
 
   // 32. Deterministic filter rejects Youth Intervention Programme (PEACEPLUS Community Justice)

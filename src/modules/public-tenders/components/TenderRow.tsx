@@ -89,7 +89,7 @@ export function TenderRow({ tender, basePath = '' }: TenderRowProps) {
           {deliverables.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-gallery-muted">Deliverables:</span>
-              {deliverables.slice(0, 4).map((d, i) => (
+              {deliverables.slice(0, 4).map((d: string, i: number) => (
                 <span
                   key={i}
                   className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-200 truncate max-w-[260px]"
@@ -103,7 +103,7 @@ export function TenderRow({ tender, basePath = '' }: TenderRowProps) {
           {/* Critical Actionable Flags */}
           {criticalFlags.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              {criticalFlags.slice(0, 3).map((flag, idx) => (
+              {criticalFlags.slice(0, 3).map((flag: string, idx: number) => (
                 <span
                   key={idx}
                   className="text-[10px] font-medium px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200"

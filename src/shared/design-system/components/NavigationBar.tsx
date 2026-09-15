@@ -12,11 +12,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { name: 'TODAY', subpath: '/today' },
   { name: 'TENDERS', subpath: '/tenders' },
-  { name: 'APPLICATIONS', subpath: '/applications' },
-  { name: 'SCAN', subpath: '/scan' },
-  { name: 'KNOWLEDGE', subpath: '/knowledge' },
   { name: 'SETTINGS', subpath: '/settings' },
 ];
 
@@ -73,7 +69,7 @@ export function NavigationBar({ basePath = '', isReviewMode = false }: Navigatio
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Brand / Workstation Title */}
           <div className="flex items-center gap-6">
-            <Link href={`${basePath}/today`} className="flex items-center gap-3 group">
+            <Link href={`${basePath}/tenders`} className="flex items-center gap-3 group">
               <div className="w-8 h-8 rounded bg-gallery-charcoal text-white font-mono font-bold text-xs flex items-center justify-center tracking-tight">
                 A/H
               </div>
@@ -89,13 +85,12 @@ export function NavigationBar({ basePath = '', isReviewMode = false }: Navigatio
 
             <div className="h-4 w-[1px] bg-gallery-border hidden md:block" />
 
-            {/* Clean 6-Item Main Navigation */}
+            {/* Clean Main Navigation */}
             <nav className="hidden md:flex items-center gap-1">
               {NAV_ITEMS.map((item) => {
                 const targetHref = `${basePath}${item.subpath}`;
                 const isActive =
-                  pathname === targetHref ||
-                  (item.subpath !== '/today' && pathname.startsWith(targetHref));
+                  pathname === targetHref || pathname.startsWith(targetHref);
 
                 return (
                   <Link
@@ -118,9 +113,9 @@ export function NavigationBar({ basePath = '', isReviewMode = false }: Navigatio
           <div className="flex items-center gap-4">
             <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded bg-gallery-surfaceMuted border border-gallery-border text-[11px] font-mono text-gallery-muted">
               <Radio className="w-3 h-3 text-emerald-600 animate-pulse" />
-              <span>Find a Tender Active</span>
+              <span>FTS &amp; CF Coverage Active</span>
               <span className="text-gallery-border">•</span>
-              <span>Next: Mon 07:00</span>
+              <span>Coverage Verified</span>
             </div>
 
             <div className="flex items-center gap-2 pl-2 border-l border-gallery-border">
@@ -139,8 +134,7 @@ export function NavigationBar({ basePath = '', isReviewMode = false }: Navigatio
           {NAV_ITEMS.map((item) => {
             const targetHref = `${basePath}${item.subpath}`;
             const isActive =
-              pathname === targetHref ||
-              (item.subpath !== '/today' && pathname.startsWith(targetHref));
+              pathname === targetHref || pathname.startsWith(targetHref);
 
             return (
               <Link
