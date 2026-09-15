@@ -93,7 +93,29 @@ export function categorizeGeminiError(err: any): GeminiFailureCategory {
   return 'UNKNOWN';
 }
 
+export type GeminiHealthState =
+  | 'NOT_CONFIGURED'
+  | 'CONFIGURED_UNTESTED'
+  | 'HEALTHY'
+  | 'INVALID_KEY'
+  | 'RATE_LIMITED'
+  | 'ERROR';
+
+export interface GeminiHealthReport {
+  status: string;
+  health: GeminiHealthState;
+  configured: boolean;
+  healthy: boolean;
+  tier1Model: string;
+  tier3Model: string;
+  error: string | null;
+  lastCheckedAt: string;
+}
+
 export class GeminiClient {
+  private static healthCache: GeminiHealthReport | null = null;
+  private static healthCacheExpiresAt = 0;
+
   private static getClient(): GoogleGenAI | null {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -104,6 +126,121 @@ export class GeminiClient {
 
   static isConfigured(): boolean {
     return Boolean(process.env.GEMINI_API_KEY);
+  }
+
+  static async checkHealth(forceRefresh = false): Promise<GeminiHealthReport> {
+    const now = Date.now();
+    if (!forceRefresh && this.healthCache && now < this.healthCacheExpiresAt) {
+      return this.healthCache;
+    }
+
+    const tier1Model = this.getModelForTier(1);
+    const tier3Model = this.getModelForTier(3);
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      const report: GeminiHealthReport = {
+        status: 'GEMINI NOT CONFIGURED',
+        health: 'NOT_CONFIGURED',
+        configured: false,
+        healthy: false,
+        tier1Model,
+        tier3Model,
+        error: null,
+        lastCheckedAt: new Date().toISOString(),
+      };
+      this.healthCache = report;
+      this.healthCacheExpiresAt = now + 60000;
+      return report;
+    }
+
+    const ai = this.getClient();
+    if (!ai) {
+      const report: GeminiHealthReport = {
+        status: 'GEMINI ERROR',
+        health: 'ERROR',
+        configured: true,
+        healthy: false,
+        tier1Model,
+        tier3Model,
+        error: 'Failed to initialize Gemini client',
+        lastCheckedAt: new Date().toISOString(),
+      };
+      this.healthCache = report;
+      this.healthCacheExpiresAt = now + 60000;
+      return report;
+    }
+
+    try {
+      const callPromise = ai.models.generateContent({
+        model: tier1Model,
+        contents: 'ping',
+        config: {
+          maxOutputTokens: 1,
+          temperature: 0.1,
+        },
+      });
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini health probe timed out after 7s')), 7000)
+      );
+
+      await Promise.race([callPromise, timeoutPromise]);
+
+      const report: GeminiHealthReport = {
+        status: 'GEMINI HEALTHY',
+        health: 'HEALTHY',
+        configured: true,
+        healthy: true,
+        tier1Model,
+        tier3Model,
+        error: null,
+        lastCheckedAt: new Date().toISOString(),
+      };
+      this.healthCache = report;
+      this.healthCacheExpiresAt = now + 300000; // 5 min TTL
+      return report;
+    } catch (err: any) {
+      const msg = (err?.message || String(err)).toLowerCase();
+      let healthState: GeminiHealthState = 'ERROR';
+      let statusStr = 'GEMINI ERROR';
+      let cleanError = 'Gemini service unreachable';
+
+      if (
+        msg.includes('api_key_invalid') ||
+        msg.includes('api key not valid') ||
+        msg.includes('invalid_argument') ||
+        msg.includes('key not valid') ||
+        msg.includes('400')
+      ) {
+        healthState = 'INVALID_KEY';
+        statusStr = 'GEMINI INVALID KEY';
+        cleanError = 'Invalid API key configured';
+      } else if (
+        msg.includes('quota') ||
+        msg.includes('429') ||
+        msg.includes('resource_exhausted') ||
+        msg.includes('rate limit')
+      ) {
+        healthState = 'RATE_LIMITED';
+        statusStr = 'GEMINI RATE LIMITED';
+        cleanError = 'Gemini API quota exceeded';
+      }
+
+      const report: GeminiHealthReport = {
+        status: statusStr,
+        health: healthState,
+        configured: true,
+        healthy: false,
+        tier1Model,
+        tier3Model,
+        error: cleanError,
+        lastCheckedAt: new Date().toISOString(),
+      };
+      this.healthCache = report;
+      this.healthCacheExpiresAt = now + 120000; // 2 min cache on error
+      return report;
+    }
   }
 
   static getModelForTier(tier: 1 | 2 | 3 | 4): string {

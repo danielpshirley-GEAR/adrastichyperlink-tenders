@@ -536,6 +536,190 @@ async function run() {
     assert.ok(evalResult.matchedKeywords.includes('brand'));
   });
 
+  // 31. Deterministic filter rejects High-Throughput Experimentation (HTE) Software for Drug Discovery
+  await test('31. Deterministic filter rejects High-Throughput Experimentation (HTE) Software for Drug Discovery', () => {
+    const hteNotice = {
+      title: 'High-Throughput Experimentation (HTE) Software for Drug Discovery',
+      description: 'The Authority is seeking a specialist scientific software platform for high-throughput chemical experimentation, laboratory data collection and drug discovery workflow management.',
+      cpvCodes: ['72212000'],
+    };
+    const evalResult = DeterministicFilter.evaluate(hteNotice);
+    assert.strictEqual(evalResult.passed, false, 'Must reject HTE scientific software');
+    assert.strictEqual(evalResult.qualification, 'REJECT');
+    assert.strictEqual(evalResult.isNegativeMatch, true);
+    assert.ok(evalResult.rejectedReason?.includes('laboratory') || evalResult.rejectedReason?.includes('scientific'));
+  });
+
+  // 32. Deterministic filter rejects Youth Intervention Programme (PEACEPLUS Community Justice)
+  await test('32. Deterministic filter rejects Youth Intervention Programme (PEACEPLUS Community Justice)', () => {
+    const youthNotice = {
+      title: 'CA18364 - Tender 56/2026 - NMANDD PEACEPLUS Thriving Together Community Justice - Youth Intervention Programme  Impact: Choices and Consequences',
+      description: 'Delivery of community justice youth intervention programme targeting at-risk adolescents through behaviour change workshops and incidental educational video sessions.',
+      cpvCodes: ['85312000'],
+    };
+    const evalResult = DeterministicFilter.evaluate(youthNotice);
+    assert.strictEqual(evalResult.passed, false, 'Must reject youth intervention programme');
+    assert.strictEqual(evalResult.qualification, 'REJECT');
+    assert.strictEqual(evalResult.isNegativeMatch, true);
+    assert.ok(evalResult.rejectedReason?.includes('Youth justice') || evalResult.rejectedReason?.includes('intervention'));
+  });
+
+  // 33. ContractsFinderEnricher HTML parser extracts buyer contact, dates, and external portal
+  await test('33. ContractsFinderEnricher HTML parser extracts buyer contact, dates, and external portal', async () => {
+    const { ContractsFinderEnricher } = await import('../src/modules/public-tenders/services/contracts-finder-enricher');
+    const enricher = new ContractsFinderEnricher();
+
+    const sampleHtml = `
+      <h3>Contract summary</h3>
+      <h4><strong>Contact name</strong></h4>
+      <p>Howard Nelson</p>
+      <h4><strong>Address</strong></h4>
+      <p>Ledbury Road<br>Peterborough<br>PE3 9PN<br>England</p>
+      <h4><strong>Telephone</strong></h4>
+      <p>0151 482 9230</p>
+      <h4><strong>Email</strong></h4>
+      <p><a href="mailto:support@multiquote.com">support@multiquote.com</a></p>
+      <h4><strong>Website</strong></h4>
+      <p><a href="https://suppliers.multiquote.com">https://suppliers.multiquote.com</a></p>
+      <h4><strong>Closing date</strong></h4>
+      <p>15 September 2026</p>
+      <h4><strong>Closing time</strong></h4>
+      <p>12pm</p>
+      <h4><strong>Contract start date</strong></h4>
+      <p>11 November 2026</p>
+      <h4><strong>Contract end date</strong></h4>
+      <p>28 February 2027</p>
+      <h4><strong>Contract is suitable for SMEs?</strong></h4>
+      <p>Yes</p>
+      <h3>Description</h3>
+      <p></p>
+      <p>Keys Academies invites suitably experienced organisations to tender for brand strategy.<br />
+      To access this competition:<br />
+      Login to <a href="https://suppliers.multiquote.com">https://suppliers.multiquote.com</a> and view CA18366.
+      </p>
+    `;
+
+    const parsed = enricher.parseHtmlNotice(sampleHtml);
+    assert.strictEqual(parsed.contactName, 'Howard Nelson');
+    assert.ok(parsed.address?.includes('PE3 9PN'));
+    assert.strictEqual(parsed.telephone, '0151 482 9230');
+    assert.strictEqual(parsed.email, 'support@multiquote.com');
+    assert.strictEqual(parsed.externalPortalUrl, 'https://suppliers.multiquote.com');
+    assert.strictEqual(parsed.closingDate, '15 September 2026');
+    assert.strictEqual(parsed.closingTime, '12pm');
+    assert.strictEqual(parsed.contractStartDate, '11 November 2026');
+    assert.strictEqual(parsed.contractEndDate, '28 February 2027');
+    assert.strictEqual(parsed.smeSuitable, true);
+  });
+
+  // 34. 13-Dimension Fact Model structure and Provenance type verification
+  await test('34. 13-Dimension Fact Model structure and Provenance type verification', async () => {
+    const { ContractsFinderEnricher } = await import('../src/modules/public-tenders/services/contracts-finder-enricher');
+    const enricher = new ContractsFinderEnricher();
+
+    const mockTender: any = {
+      id: 'test-pkat-id',
+      canonicalReference: '9e6075b9-419a-4770-a98e-05fa579ca43d',
+      title: 'Brand and Communications Strategy',
+      buyerName: 'PKAT',
+      serviceTags: ['branding', 'strategy'],
+    };
+
+    const mockRelease: any = {
+      id: 'rel-1',
+      parties: [{ roles: ['buyer'], name: 'PKAT' }],
+    };
+
+    const mockHtml: any = {
+      contactName: 'Howard Nelson',
+      address: 'Ledbury Road, Peterborough PE3 9PN',
+      telephone: '0151 482 9230',
+      email: 'support@multiquote.com',
+      externalPortalUrl: 'https://suppliers.multiquote.com',
+      closingDate: '15 September 2026',
+      closingTime: '12pm',
+      contractStartDate: '11 November 2026',
+      contractEndDate: '28 February 2027',
+      smeSuitable: true,
+      cpvCodes: [{ code: '79340000', name: 'Advertising and marketing' }],
+      attachmentLinks: [],
+    };
+
+    const mockProbe = { accessState: 'LOGIN REQUIRED' as any, finalUrl: 'https://suppliers.multiquote.com/Page/Login.aspx', notes: 'Login required' };
+    const mockDocs: any[] = [];
+
+    const factModel = enricher.buildFactModel(mockTender, mockRelease, mockHtml, mockProbe, mockDocs, []);
+
+    assert.ok(factModel.identity, 'Identity dimension must exist');
+    assert.ok(factModel.buyer, 'Buyer dimension must exist');
+    assert.ok(factModel.procurement, 'Procurement dimension must exist');
+    assert.ok(factModel.money, 'Money dimension must exist');
+    assert.ok(factModel.dates, 'Dates dimension must exist');
+    assert.ok(factModel.scope, 'Scope dimension must exist');
+    assert.ok(factModel.creativeRequirements, 'Creative requirements dimension must exist');
+    assert.ok(factModel.eligibility, 'Eligibility dimension must exist');
+    assert.ok(factModel.experienceRequirements, 'Experience dimension must exist');
+    assert.ok(factModel.evaluation, 'Evaluation dimension must exist');
+    assert.ok(factModel.submission, 'Submission dimension must exist');
+    assert.ok(factModel.contract, 'Contract dimension must exist');
+    assert.ok(factModel.other, 'Other dimension must exist');
+
+    assert.strictEqual(factModel.buyer.contactName?.value, 'Howard Nelson');
+    assert.strictEqual(factModel.submission.accessState.value, 'LOGIN REQUIRED');
+    assert.strictEqual(factModel.dates.contractStart?.value, '11 November 2026');
+    assert.strictEqual(factModel.dates.submissionDeadline?.value, '15 September 2026, 12pm');
+  });
+
+  // 35. Deterministic 20-field Information Completeness calculation
+  await test('35. Deterministic 20-field Information Completeness calculation', async () => {
+    const { ContractsFinderEnricher } = await import('../src/modules/public-tenders/services/contracts-finder-enricher');
+    const enricher = new ContractsFinderEnricher();
+
+    const mockTender: any = {
+      id: 'test-completeness-id',
+      canonicalReference: '9e6075b9-419a-4770-a98e-05fa579ca43d',
+      title: 'Brand and Communications Strategy',
+      buyerName: 'PKAT',
+      serviceTags: ['branding'],
+    };
+
+    const mockRelease: any = {
+      id: 'rel-1',
+      parties: [{ roles: ['buyer'], name: 'PKAT' }],
+    };
+
+    const mockHtml: any = {
+      contactName: 'Howard Nelson',
+      address: 'Peterborough',
+      telephone: '0151 482 9230',
+      email: 'support@multiquote.com',
+      externalPortalUrl: 'https://suppliers.multiquote.com',
+      closingDate: '15 September 2026',
+      closingTime: '12pm',
+      contractStartDate: '11 November 2026',
+      contractEndDate: '28 February 2027',
+      smeSuitable: true,
+      contractValueAmount: 30000,
+      descriptionText: 'Comprehensive brand and communications engagement strategy for new multi-academy trust.',
+      cpvCodes: [{ code: '79340000', name: 'Advertising and marketing' }],
+      attachmentLinks: [],
+    };
+
+    const mockProbe = { accessState: 'LOGIN REQUIRED' as any, finalUrl: 'https://suppliers.multiquote.com', notes: 'Login' };
+    const mockDocs: any[] = [{ id: 'doc-1', fileName: 'Official Notice', accessState: 'PUBLIC', fileHash: null, analysisStatus: 'analyzed' }];
+
+    const factModel = enricher.buildFactModel(mockTender, mockRelease, mockHtml, mockProbe, mockDocs, []);
+    const completeness = enricher.calculateCompleteness(factModel, mockDocs);
+
+    assert.strictEqual(completeness.total, 20, 'Must evaluate exactly 20 dimensions');
+    assert.ok(completeness.score >= 12, `Completeness score ${completeness.score} should be >= 12`);
+    assert.ok(completeness.percentage >= 60, `Completeness percentage ${completeness.percentage}% should be >= 60%`);
+    assert.strictEqual(completeness.fields.scope.status, 'FOUND');
+    assert.strictEqual(completeness.fields.buyer_contact.status, 'FOUND');
+    assert.strictEqual(completeness.fields.portal_access.status, 'FOUND');
+    assert.strictEqual(completeness.fields.sme_suitability.status, 'FOUND');
+  });
+
   console.log('\n====================================================');
   console.log(`CONTRACTS FINDER SUITE: ${passed} / ${passed + failed} TESTS PASSED`);
   console.log('====================================================');

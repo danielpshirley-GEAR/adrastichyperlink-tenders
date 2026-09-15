@@ -182,6 +182,18 @@ const NEGATIVE_EXCLUSIONS = [
   { pattern: 'network infrastructure', reason: 'Network infrastructure' },
   { pattern: 'cyber security hardware', reason: 'Cyber security hardware' },
   { pattern: 'data centre', reason: 'Data centre hosting and infrastructure' },
+  // Scientific Research, Laboratory & Pharmaceutical Software
+  { pattern: 'high-throughput experimentation', reason: 'Specialist laboratory / scientific software' },
+  { pattern: 'hte software', reason: 'Specialist laboratory / scientific software' },
+  { pattern: 'drug discovery', reason: 'Pharmaceutical / scientific research software' },
+  { pattern: 'scientific software', reason: 'Specialist scientific software' },
+  { pattern: 'laboratory software', reason: 'Laboratory software' },
+  // Social Work, Youth Intervention & Direct Behaviour Change Workshops
+  { pattern: 'youth intervention programme', reason: 'Youth justice / social intervention programme' },
+  { pattern: 'youth intervention program', reason: 'Youth justice / social intervention programme' },
+  { pattern: 'community justice', reason: 'Community justice / crime reduction programme' },
+  { pattern: 'behaviour change workshops', reason: 'Youth work / behavioural workshops' },
+  { pattern: 'behavioural workshops', reason: 'Youth work / behavioural workshops' },
 ];
 
 export class DeterministicFilter {

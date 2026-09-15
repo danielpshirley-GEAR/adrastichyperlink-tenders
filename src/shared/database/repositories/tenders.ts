@@ -496,6 +496,7 @@ function mapRowToTender(row: any): TenderSummary {
       applicationPortalUrl: row.application_portal_url || undefined,
       serviceTags: row.service_tags ? JSON.parse(row.service_tags) : [],
       sourceId: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
+      source: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
       isArchived: Boolean(row.is_archived),
       archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
       discoveredAt: row.discovered_at,
@@ -507,5 +508,8 @@ function mapRowToTender(row: any): TenderSummary {
       requirements: row.requirements ? JSON.parse(row.requirements) : [],
       documents: row.documents ? JSON.parse(row.documents) : [],
       enrichment,
+      completeness: enrichment?.completeness || undefined,
+      criticalFlags: enrichment?.criticalFlags || undefined,
+      keyDeliverables: enrichment?.scopeAndSpec?.buyerKeyDeliverables || enrichment?.scopeAndSpec?.keyDeliverables || undefined,
     };
   }

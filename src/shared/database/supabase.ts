@@ -484,6 +484,7 @@ export class SupabaseTendersRepository implements ITendersRepository {
       applicationPortalUrl: row.application_portal_url || undefined,
       serviceTags: Array.isArray(row.service_tags) ? row.service_tags : [],
       sourceId: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
+      source: row.source_id || (row.official_notice_url?.includes('contractsfinder.service.gov.uk') ? 'contracts_finder' : 'find_a_tender'),
       isArchived: Boolean(row.is_archived),
       archivedReason: row.archived_reason || (row.is_archived && row.final_qualification === 'REJECT' ? 'AI_REJECTED' : (row.is_archived && row.lifecycle_status === 'EXPIRED' ? 'EXPIRED' : undefined)),
       discoveredAt: row.discovered_at,
@@ -495,6 +496,9 @@ export class SupabaseTendersRepository implements ITendersRepository {
       requirements,
       documents,
       enrichment,
+      completeness: enrichment?.completeness || undefined,
+      criticalFlags: enrichment?.criticalFlags || undefined,
+      keyDeliverables: enrichment?.scopeAndSpec?.buyerKeyDeliverables || enrichment?.scopeAndSpec?.keyDeliverables || undefined,
     };
   }
 }

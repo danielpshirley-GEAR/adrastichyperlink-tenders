@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const dbHealth = await checkDatabaseHealth();
-  const geminiConfigured = GeminiClient.isConfigured();
+  const geminiHealth = await GeminiClient.checkHealth();
 
   let ftsSource = null;
   let cfSource = null;
@@ -102,10 +102,14 @@ export async function GET() {
       error: dbHealth.error,
     },
     gemini: {
-      status: geminiConfigured ? 'GEMINI CONFIGURED' : 'GEMINI NOT CONFIGURED',
-      configured: geminiConfigured,
-      tier1Model: GeminiClient.getModelForTier(1),
-      tier3Model: GeminiClient.getModelForTier(3),
+      status: geminiHealth.status,
+      health: geminiHealth.health,
+      configured: geminiHealth.configured,
+      healthy: geminiHealth.healthy,
+      tier1Model: geminiHealth.tier1Model,
+      tier3Model: geminiHealth.tier3Model,
+      error: geminiHealth.error,
+      lastCheckedAt: geminiHealth.lastCheckedAt,
     },
     findATender: {
       status: ftsStatusString,

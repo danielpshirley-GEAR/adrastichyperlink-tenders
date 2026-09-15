@@ -20,6 +20,7 @@ import {
   EvidenceConfidence,
 } from '../types/tender';
 import { GeminiClient } from '@/shared/ai/gemini-client';
+import { ContractsFinderEnricher } from './contracts-finder-enricher';
 
 export class DetailEnrichmentService {
   private connector: FindATenderConnector;
@@ -196,6 +197,16 @@ export class DetailEnrichmentService {
     tender: TenderSummary,
     existingRawRecord?: RawNoticeRecord | null
   ): Promise<TenderEnrichment> {
+    const isContractsFinder =
+      tender.sourceId === 'contracts_finder' ||
+      tender.source === 'contracts_finder' ||
+      tender.officialNoticeUrl?.includes('contractsfinder.service.gov.uk');
+
+    if (isContractsFinder) {
+      const cfEnricher = new ContractsFinderEnricher();
+      return cfEnricher.enrichContractsFinderTender(tender);
+    }
+
     const noticeIdOrOcid = tender.latestNoticeId || tender.canonicalReference || tender.ocid || tender.id;
 
     // 1. Fetch complete official notice if not provided

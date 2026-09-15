@@ -42,8 +42,12 @@ export function TenderDetailView({
   const [appId, setAppId] = useState<string | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [showCompletenessDetails, setShowCompletenessDetails] = useState(false);
 
   const enrichment = tender?.enrichment;
+  const completeness = tender?.completeness || enrichment?.completeness;
+  const criticalFlags = tender?.criticalFlags || enrichment?.criticalFlags || [];
+  const factModel = enrichment?.factModel;
   const scopeAndSpec = enrichment?.scopeAndSpec;
   const submissionDetails = enrichment?.submissionDetails;
   const fitAndRisks = enrichment?.fitAndRisks;
@@ -237,6 +241,119 @@ export function TenderDetailView({
           </div>
         )}
       </header>
+
+      {/* Critical Actionable Flags Banner */}
+      {criticalFlags.length > 0 && (
+        <section className="p-4 bg-amber-50/80 border border-amber-300 rounded-lg space-y-2">
+          <div className="flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider text-amber-900">
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>Critical Procurement Directives & Flags ({criticalFlags.length})</span>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {criticalFlags.map((flag: string, idx: number) => (
+              <span
+                key={idx}
+                className="text-xs font-semibold px-2.5 py-1 rounded bg-white text-amber-950 border border-amber-200 shadow-2xs"
+              >
+                {flag}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Information Completeness & Health Bar */}
+      {completeness && (
+        <section className="p-4 bg-gallery-surface border border-gallery-border rounded-lg space-y-3 shadow-2xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-gallery-charcoal">
+                  Information Completeness Score:
+                </span>
+                <span className="text-sm font-mono font-extrabold text-gallery-charcoal">
+                  {completeness.score} / {completeness.total} Core Facts Found ({completeness.percentage}%)
+                </span>
+                <span
+                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                    completeness.status === 'COMPLETE'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : completeness.status === 'PARTIAL'
+                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                      : 'bg-zinc-100 text-zinc-700 border-zinc-200'
+                  }`}
+                >
+                  {completeness.status}
+                </span>
+              </div>
+              <p className="text-[11px] text-gallery-muted">
+                Evaluates 20 deterministic procurement dimensions across buyer identity, scope, documents, portal access, and financial constraints.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowCompletenessDetails(!showCompletenessDetails)}
+              className="text-xs font-mono font-bold px-3 py-1 bg-gallery-surfaceMuted hover:bg-gallery-border text-gallery-charcoal border border-gallery-border rounded transition-colors"
+            >
+              {showCompletenessDetails ? 'Hide Fact Checklist ▲' : 'View 20-Field Audit Checklist ▼'}
+            </button>
+          </div>
+
+          {/* Visual Progress Bar */}
+          <div className="w-full h-2 bg-gallery-canvas rounded-full overflow-hidden border border-gallery-border/80">
+            <div
+              className={`h-full transition-all duration-500 rounded-full ${
+                completeness.status === 'COMPLETE'
+                  ? 'bg-emerald-600'
+                  : completeness.status === 'PARTIAL'
+                  ? 'bg-amber-500'
+                  : 'bg-zinc-400'
+              }`}
+              style={{ width: `${Math.min(100, Math.max(5, completeness.percentage))}%` }}
+            />
+          </div>
+
+          {/* Expandable 20-Field Audit Grid */}
+          {showCompletenessDetails && completeness.fields && (
+            <div className="pt-3 border-t border-gallery-border mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                {Object.entries(completeness.fields).map(([key, field]: [string, any]) => (
+                  <div
+                    key={key}
+                    className={`p-2.5 rounded border text-[11px] space-y-1 ${
+                      field.status === 'FOUND'
+                        ? 'bg-emerald-50/50 border-emerald-200 text-emerald-950'
+                        : field.status === 'PARTIAL'
+                        ? 'bg-amber-50/50 border-amber-200 text-amber-950'
+                        : 'bg-zinc-50 border-zinc-200 text-zinc-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-mono font-bold text-[10px]">
+                      <span>{field.label}</span>
+                      <span
+                        className={`px-1 py-0.2 rounded font-mono text-[9px] ${
+                          field.status === 'FOUND'
+                            ? 'text-emerald-700 font-bold'
+                            : field.status === 'PARTIAL'
+                            ? 'text-amber-700 font-bold'
+                            : 'text-zinc-400'
+                        }`}
+                      >
+                        {field.status}
+                      </span>
+                    </div>
+                    {field.valueSummary && (
+                      <div className="text-[10px] text-gallery-muted truncate" title={field.valueSummary}>
+                        {field.valueSummary}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* 2. Overview & Key Metric Snapshot Grid */}
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -689,7 +806,22 @@ export function TenderDetailView({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
           <div className="p-3.5 bg-gallery-canvas rounded border border-gallery-border space-y-2">
-            <div className="text-[10px] font-mono uppercase text-gallery-muted font-bold">Route & Portal</div>
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-mono uppercase text-gallery-muted font-bold">Route & External Portal</div>
+              {factModel?.submission?.accessState?.value && (
+                <span
+                  className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${
+                    factModel.submission.accessState.value === 'PUBLIC'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : factModel.submission.accessState.value === 'LOGIN REQUIRED'
+                      ? 'bg-amber-50 text-amber-900 border-amber-300'
+                      : 'bg-zinc-100 text-zinc-700 border-zinc-200'
+                  }`}
+                >
+                  {factModel.submission.accessState.value}
+                </span>
+              )}
+            </div>
             <div className="font-bold text-gallery-charcoal">
               {submissionDetails?.submissionRoute || (isMarketEngagement ? 'Public Contracts Scotland / Market Engagement' : 'Official Electronic Portal')}
             </div>
@@ -698,34 +830,59 @@ export function TenderDetailView({
                 href={submissionDetails.submissionPortalUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[11px] text-tender-primary hover:underline inline-flex items-center gap-1 font-mono break-all"
+                className="text-[11px] text-tender-primary hover:underline inline-flex items-center gap-1 font-mono break-all font-semibold"
               >
                 <span>{submissionDetails.submissionPortalUrl}</span>
                 <ExternalLink className="w-3 h-3 shrink-0" />
               </a>
             )}
+            {factModel?.submission?.registrationRequirement?.value && (
+              <div className="text-[10px] text-gallery-muted font-mono pt-1">
+                {factModel.submission.registrationRequirement.value}
+              </div>
+            )}
           </div>
 
           <div className="p-3.5 bg-gallery-canvas rounded border border-gallery-border space-y-2">
-            <div className="text-[10px] font-mono uppercase text-gallery-muted font-bold">Buyer Contact Point</div>
-            <div className="font-bold text-gallery-charcoal">
-              {submissionDetails?.buyerContact?.name || tender.buyerName || 'Procurement Authority'}
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-mono uppercase text-gallery-muted font-bold">Verified Buyer Contact</div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                OFFICIAL SOURCE
+              </span>
             </div>
+            <div className="font-bold text-gallery-charcoal text-sm">
+              {submissionDetails?.buyerContact?.name || factModel?.buyer?.contactName?.value || tender.buyerName || 'Procurement Authority'}
+            </div>
+            {factModel?.buyer?.organisation?.value && factModel.buyer.organisation.value !== tender.buyerName && (
+              <div className="text-[11px] text-gallery-muted font-medium">
+                Org: {factModel.buyer.organisation.value}
+              </div>
+            )}
             {submissionDetails?.buyerContact?.email && (
               <div className="text-[11px] font-mono text-gallery-muted">
                 Email:{' '}
-                <a href={`mailto:${submissionDetails.buyerContact.email}`} className="text-tender-primary hover:underline">
+                <a href={`mailto:${submissionDetails.buyerContact.email}`} className="text-tender-primary hover:underline font-semibold">
                   {submissionDetails.buyerContact.email}
                 </a>
               </div>
             )}
             {submissionDetails?.buyerContact?.telephone && (
               <div className="text-[11px] font-mono text-gallery-muted">
-                Tel: {submissionDetails.buyerContact.telephone}
+                Tel: <span className="font-semibold text-gallery-charcoal">{submissionDetails.buyerContact.telephone}</span>
+              </div>
+            )}
+            {factModel?.buyer?.website?.value && (
+              <div className="text-[11px] font-mono text-gallery-muted">
+                Web:{' '}
+                <a href={factModel.buyer.website.value} target="_blank" rel="noopener noreferrer" className="text-tender-primary hover:underline">
+                  {factModel.buyer.website.value}
+                </a>
               </div>
             )}
             {submissionDetails?.buyerContact?.address && (
-              <div className="text-[10px] text-gallery-faint">{submissionDetails.buyerContact.address}</div>
+              <div className="text-[10px] text-gallery-faint pt-1 border-t border-gallery-border/60 whitespace-pre-line">
+                📍 {submissionDetails.buyerContact.address}
+              </div>
             )}
           </div>
         </div>

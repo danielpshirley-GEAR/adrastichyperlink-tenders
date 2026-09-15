@@ -64,6 +64,7 @@ export interface TenderSummary {
   applicationPortalUrl?: string;
   serviceTags: ServiceTaxonomy[];
   sourceId: string;
+  source?: string;
   isArchived: boolean;
   archivedReason?: 'RULE_RECLASSIFIED' | 'AI_REJECTED' | 'EXPIRED' | 'MANUAL' | string | null;
   discoveredAt: string;
@@ -76,6 +77,9 @@ export interface TenderSummary {
   requirements?: TenderRequirement[];
   documents?: TenderDocumentItem[];
   enrichment?: TenderEnrichment;
+  completeness?: InformationCompleteness;
+  criticalFlags?: string[];
+  keyDeliverables?: string[];
   isEligibilityPublished?: boolean;
   eligibilityNoticeText?: string;
   identityConflict?: boolean;
@@ -256,6 +260,179 @@ export interface SourceEvidenceItem {
   isVerified: boolean;
 }
 
+export type ProvenanceSourceType =
+  | 'CONTRACTS_FINDER_OCDS'
+  | 'CONTRACTS_FINDER_NOTICE_PAGE'
+  | 'FIND_A_TENDER_OCDS'
+  | 'FIND_A_TENDER_NOTICE_PAGE'
+  | 'BUYER_PORTAL'
+  | 'TENDER_DOCUMENT'
+  | 'AI_INTERPRETATION'
+  | 'DERIVED_ABSENCE'
+  | 'UNKNOWN';
+
+export type FactStatus =
+  | 'FOUND'
+  | 'PARTIAL'
+  | 'NOT_FOUND'
+  | 'NOT_YET_RETRIEVED'
+  | 'REGISTRATION_REQUIRED'
+  | 'LOGIN_REQUIRED'
+  | 'BROKEN';
+
+export interface ProvenancedFact<T = any> {
+  value: T;
+  factType: FactType;
+  sourceType: ProvenanceSourceType;
+  sourceUrl?: string | null;
+  sourceDocument?: string | null;
+  sourceLocation?: string | null;
+  extractedAt: string;
+  confidence: EvidenceConfidence;
+  status: FactStatus;
+  notes?: string;
+}
+
+export interface InformationCompleteness {
+  score: number; // Found core fields
+  total: number; // Total core dimensions (e.g. 20)
+  percentage: number;
+  status: 'COMPLETE' | 'PARTIAL' | 'MINIMAL';
+  fields: Record<
+    string,
+    {
+      label: string;
+      status: 'FOUND' | 'PARTIAL' | 'NOT_FOUND' | 'REGISTRATION_REQUIRED';
+      valueSummary?: string;
+    }
+  >;
+}
+
+export interface TenderFactModel {
+  identity: {
+    title: ProvenancedFact<string>;
+    noticeId: ProvenancedFact<string>;
+    releaseId?: ProvenancedFact<string>;
+    ocid?: ProvenancedFact<string>;
+    buyerReference?: ProvenancedFact<string>;
+    procurementReference?: ProvenancedFact<string>;
+    source: ProvenancedFact<string>;
+  };
+  buyer: {
+    organisation: ProvenancedFact<string>;
+    buyerType: ProvenancedFact<string>;
+    department?: ProvenancedFact<string>;
+    address?: ProvenancedFact<string>;
+    region?: ProvenancedFact<string>;
+    contactName?: ProvenancedFact<string>;
+    contactRole?: ProvenancedFact<string>;
+    email?: ProvenancedFact<string>;
+    telephone?: ProvenancedFact<string>;
+    website?: ProvenancedFact<string>;
+  };
+  procurement: {
+    stage: ProvenancedFact<ProcurementStage>;
+    procedure: ProvenancedFact<string>;
+    procurementMethod?: ProvenancedFact<string>;
+    frameworkStatus?: ProvenancedFact<string>;
+    dynamicMarketStatus?: ProvenancedFact<string>;
+    lots?: ProvenancedFact<Array<{ lotId: string; title: string; value?: number; description?: string }>>;
+    smeSuitable: ProvenancedFact<boolean | null>;
+    vcseSuitable: ProvenancedFact<boolean | null>;
+    cpvCodes: ProvenancedFact<string[]>;
+  };
+  money: {
+    estimatedValue?: ProvenancedFact<number | null>;
+    minValue?: ProvenancedFact<number | null>;
+    maxValue?: ProvenancedFact<number | null>;
+    currency: ProvenancedFact<string>;
+    valueDescription?: ProvenancedFact<string>;
+    vatTreatment?: ProvenancedFact<string>;
+    pricingModel?: ProvenancedFact<string>;
+  };
+  dates: {
+    publication?: ProvenancedFact<string | null>;
+    lastUpdate?: ProvenancedFact<string | null>;
+    clarificationDeadline?: ProvenancedFact<string | null>;
+    submissionDeadline?: ProvenancedFact<string | null>;
+    contractStart?: ProvenancedFact<string | null>;
+    contractEnd?: ProvenancedFact<string | null>;
+    duration?: ProvenancedFact<string | null>;
+  };
+  scope: {
+    buyerProblem?: ProvenancedFact<string>;
+    objectives?: ProvenancedFact<string>;
+    exactDeliverables: ProvenancedFact<string[]>;
+    requiredOutputs?: ProvenancedFact<string[]>;
+    formats?: ProvenancedFact<string[]>;
+    channels?: ProvenancedFact<string[]>;
+    audiences?: ProvenancedFact<string>;
+    workingModel?: ProvenancedFact<string>;
+  };
+  creativeRequirements?: {
+    branding?: ProvenancedFact<boolean>;
+    brandStrategy?: ProvenancedFact<boolean>;
+    visualIdentity?: ProvenancedFact<boolean>;
+    graphicDesign?: ProvenancedFact<boolean>;
+    campaignCreative?: ProvenancedFact<boolean>;
+    motionDesign?: ProvenancedFact<boolean>;
+    animation?: ProvenancedFact<boolean>;
+    video?: ProvenancedFact<boolean>;
+    filming?: ProvenancedFact<boolean>;
+    editing?: ProvenancedFact<boolean>;
+    website?: ProvenancedFact<boolean>;
+    uxUi?: ProvenancedFact<boolean>;
+    events?: ProvenancedFact<boolean>;
+  };
+  eligibility: {
+    mandatoryRequirements: ProvenancedFact<string[]>;
+    passFailConditions: ProvenancedFact<string[]>;
+    turnoverRequirement?: ProvenancedFact<string>;
+    insurancePI?: ProvenancedFact<string>;
+    insurancePL?: ProvenancedFact<string>;
+    insuranceEL?: ProvenancedFact<string>;
+    certifications?: ProvenancedFact<string[]>;
+    securityRequirements?: ProvenancedFact<string>;
+  };
+  experienceRequirements: {
+    previousContracts?: ProvenancedFact<string>;
+    caseStudiesRequired?: ProvenancedFact<string>;
+    referencesRequired?: ProvenancedFact<string>;
+    sectorExperience?: ProvenancedFact<string>;
+  };
+  evaluation: {
+    qualityWeighting?: ProvenancedFact<number | null>;
+    priceWeighting?: ProvenancedFact<number | null>;
+    socialValueWeighting?: ProvenancedFact<number | null>;
+    interviewWeighting?: ProvenancedFact<number | null>;
+    criteria: ProvenancedFact<Array<{ criterion: string; weighting?: number | null; description?: string }>>;
+    scoringMethodology?: ProvenancedFact<string>;
+  };
+  submission: {
+    portal?: ProvenancedFact<string>;
+    exactSubmissionUrl?: ProvenancedFact<string>;
+    registrationRequirement: ProvenancedFact<string>;
+    accessState: ProvenancedFact<DocumentAccessState>;
+    responseFormat?: ProvenancedFact<string>;
+    wordLimits?: ProvenancedFact<string>;
+    attachmentsRequired?: ProvenancedFact<string[]>;
+    deadline?: ProvenancedFact<string | null>;
+  };
+  contract: {
+    duration?: ProvenancedFact<string>;
+    extensions?: ProvenancedFact<string>;
+    paymentTerms?: ProvenancedFact<string>;
+    kpis?: ProvenancedFact<string>;
+    intellectualProperty?: ProvenancedFact<string>;
+  };
+  other: {
+    incumbent?: ProvenancedFact<string>;
+    siteVisits?: ProvenancedFact<string>;
+    bidderEvents?: ProvenancedFact<string>;
+    amendments?: ProvenancedFact<string[]>;
+  };
+}
+
 export interface TenderEnrichment {
   tenderId: string;
   canonicalReference: string;
@@ -271,5 +448,9 @@ export interface TenderEnrichment {
   submissionDetails: SubmissionAndEngagementDetails;
   fitAndRisks: FitAndRisksAssessment;
   sourceEvidence: SourceEvidenceItem[];
+  factModel?: TenderFactModel;
+  completeness?: InformationCompleteness;
+  criticalFlags?: string[];
 }
+
 

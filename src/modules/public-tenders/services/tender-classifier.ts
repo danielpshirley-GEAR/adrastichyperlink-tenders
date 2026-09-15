@@ -273,28 +273,36 @@ Respond strictly in valid JSON matching this schema:
             ai: {
               status: 'RUN',
               aiReviewStatus: 'COMPLETED',
-              relevance: data.relevance,
-              primaryPurpose,
-              serviceMatches: data.serviceMatches,
+              relevance: finalRelevance,
+              primaryPurpose: data.analysis?.primaryPurpose,
+              serviceMatches: data.serviceMatches || [],
               reason: data.reason,
+              analysis: data.analysis,
               confidence: data.confidence,
               model: GeminiClient.getModelForTier(1),
-              analysis: data.analysis,
             },
             final: {
               relevance: finalRelevance,
-              primaryPurpose,
-              reason: reasonFinalQualificationWasChosen,
-              serviceMatches: data.serviceMatches,
-              recommendation: data.analysis?.recommendation as any,
+              primaryPurpose: data.analysis?.primaryPurpose,
+              serviceMatches: data.serviceMatches || deterministic.matchedKeywords,
+              reason: data.reason,
               analysis: data.analysis,
               reasonFinalQualificationWasChosen,
             },
           };
         } else {
-          // Gemini failed after bounded retries
+          // Gemini failed after bounded retries — clean human-facing degradation without raw JSON dumps
           const errorCategory = callResult.errorCategory || 'UNKNOWN';
           const errorMessage = callResult.errorMessage || 'Gemini returned empty response';
+          console.warn(`[TenderClassifier] Gemini degradation [${errorCategory}]: ${errorMessage}`);
+
+          let cleanSummary = 'AI review unavailable. Retained via deterministic filter for manual review.';
+          if (errorMessage.includes('API_KEY_INVALID') || errorMessage.includes('API key not valid')) {
+            cleanSummary = 'AI review unavailable (Invalid Gemini configuration). Retained based on buyer scope.';
+          } else if (errorCategory === 'RATE_LIMIT') {
+            cleanSummary = 'AI review unavailable (Gemini quota limit). Retained based on buyer scope.';
+          }
+
           return {
             deterministic: deterministicResult,
             ai: {
@@ -302,20 +310,21 @@ Respond strictly in valid JSON matching this schema:
               aiReviewStatus: 'REQUIRED',
               failureCategory: errorCategory,
               serviceMatches: [],
-              reason: `[${errorCategory}] ${errorMessage}`,
+              reason: cleanSummary,
               model: GeminiClient.getModelForTier(1),
             },
             final: {
-              relevance: 'POSSIBLE', // preserve deterministic candidate for safety
-              reason: `AI REVIEW INCOMPLETE (${errorCategory}): ${errorMessage}. Retained via deterministic filter for manual review.`,
+              relevance: 'POSSIBLE',
+              reason: cleanSummary,
               serviceMatches: deterministic.matchedKeywords,
-              recommendation: 'REVIEW', // NOT an AI-derived recommendation
-              reasonFinalQualificationWasChosen: `AI REVIEW INCOMPLETE [${errorCategory}]: ${errorMessage}. Unverified candidate retained as POSSIBLE with recommendation REVIEW.`,
+              recommendation: 'REVIEW',
+              reasonFinalQualificationWasChosen: cleanSummary,
             },
           };
         }
       } catch (err: any) {
         console.error('TenderClassifier Gemini error:', err.message);
+        const cleanSummary = 'AI review unavailable. Retained via deterministic filter for manual review.';
         return {
           deterministic: deterministicResult,
           ai: {
@@ -323,15 +332,15 @@ Respond strictly in valid JSON matching this schema:
             aiReviewStatus: 'REQUIRED',
             failureCategory: 'UNKNOWN',
             serviceMatches: [],
-            reason: `Gemini execution error: ${err.message}`,
+            reason: cleanSummary,
             model: GeminiClient.getModelForTier(1),
           },
           final: {
             relevance: deterministic.qualification,
-            reason: `AI REVIEW INCOMPLETE: ${err.message}. Retained via deterministic filter for manual review.`,
+            reason: cleanSummary,
             serviceMatches: deterministic.matchedKeywords,
             recommendation: 'REVIEW',
-            reasonFinalQualificationWasChosen: `AI REVIEW INCOMPLETE [UNKNOWN]: ${err.message}. Unverified candidate retained as POSSIBLE with recommendation REVIEW.`,
+            reasonFinalQualificationWasChosen: cleanSummary,
           },
         };
       }

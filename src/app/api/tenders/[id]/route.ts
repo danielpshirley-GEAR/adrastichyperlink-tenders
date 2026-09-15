@@ -17,22 +17,40 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const id = params.id;
     let tender = await tendersRepo.findResilient(id);
 
-    // Dynamic fallback: If not found in local repo, but matches official Find a Tender notice pattern (e.g. 067718-2026)
-    if (!tender && /^\d{6}-\d{4}$/.test(id.trim())) {
-      try {
-        const { FindATenderConnector } = await import('@/modules/public-tenders/connectors/find-a-tender');
-        const connector = new FindATenderConnector();
-        const notice = await connector.fetchNotice(id.trim());
-        if (notice) {
-          tender = await tendersRepo.save({
-            ...notice,
-            canonicalReference: notice.noticeId,
-            discoveredAt: new Date().toISOString(),
-            lastVerifiedAt: new Date().toISOString(),
-          });
+    // Dynamic fallback: If not found in local repo, check notice pattern
+    if (!tender) {
+      if (/^\d{6}-\d{4}$/.test(id.trim())) {
+        try {
+          const { FindATenderConnector } = await import('@/modules/public-tenders/connectors/find-a-tender');
+          const connector = new FindATenderConnector();
+          const notice = await connector.fetchNotice(id.trim());
+          if (notice) {
+            tender = await tendersRepo.save({
+              ...notice,
+              canonicalReference: notice.noticeId,
+              discoveredAt: new Date().toISOString(),
+              lastVerifiedAt: new Date().toISOString(),
+            });
+          }
+        } catch (fetchErr: any) {
+          console.warn(`[Api/Tenders/${id}] Dynamic FTS fallback fetch failed:`, fetchErr.message);
         }
-      } catch (fetchErr: any) {
-        console.warn(`[Api/Tenders/${id}] Dynamic notice fallback fetch failed:`, fetchErr.message);
+      } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(id.trim())) {
+        try {
+          const { ContractsFinderConnector } = await import('@/modules/public-tenders/connectors/contracts-finder');
+          const connector = new ContractsFinderConnector();
+          const notice = await connector.fetchNotice(id.trim());
+          if (notice) {
+            tender = await tendersRepo.save({
+              ...notice,
+              canonicalReference: notice.noticeId,
+              discoveredAt: new Date().toISOString(),
+              lastVerifiedAt: new Date().toISOString(),
+            });
+          }
+        } catch (fetchErr: any) {
+          console.warn(`[Api/Tenders/${id}] Dynamic CF fallback fetch failed:`, fetchErr.message);
+        }
       }
     }
 
@@ -40,11 +58,11 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       return NextResponse.json({ error: 'Tender not found' }, { status: 404 });
     }
 
-    // Auto-enrich actionable tenders on open if not yet enriched
+    // Auto-enrich actionable tenders on open if missing deep enrichment or completeness
     const isActionable = tender.qualification === 'STRONG' || tender.qualification === 'POSSIBLE' || tender.bidDecisionState === 'BID' || tender.bidDecisionState === 'WATCH';
-    const isEnriched = Boolean(tender.enrichment && tender.enrichment.scopeAndSpec && tender.enrichment.scopeAndSpec.whatBuyerWants);
+    const hasDeepEnrichment = Boolean(tender.enrichment?.factModel && tender.enrichment?.completeness);
 
-    if (isActionable && !isEnriched) {
+    if (isActionable && !hasDeepEnrichment) {
       try {
         const { DetailEnrichmentService } = await import('@/modules/public-tenders/services/detail-enrichment');
         const enrichmentService = new DetailEnrichmentService();
@@ -54,6 +72,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         tender.documents = enrichment.documents;
         tender.evaluationCriteria = enrichment.evaluationCriteria;
         tender.enrichment = enrichment;
+        tender.completeness = enrichment.completeness;
+        tender.criticalFlags = enrichment.criticalFlags;
+        tender.keyDeliverables = enrichment.scopeAndSpec?.buyerKeyDeliverables || enrichment.scopeAndSpec?.keyDeliverables;
         tender = await tendersRepo.save(tender);
       } catch (enrichErr: any) {
         console.warn(`[Api/Tenders/${id}] Auto-enrichment failed:`, enrichErr.message);
